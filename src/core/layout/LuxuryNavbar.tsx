@@ -78,8 +78,8 @@ export function LuxuryNavbar() {
         </div>
 
         {/* Right: Actions */}
-        <div className="hidden lg:flex flex-1 items-center justify-end gap-6 relative">
-          <button className="text-typography-primary hover:text-brand-pink transition-colors">
+        <div className="flex flex-1 items-center justify-end gap-4 lg:gap-6 relative">
+          <button className="hidden lg:block text-typography-primary hover:text-brand-pink transition-colors">
             <Search className="w-5 h-5" strokeWidth={1.5} />
           </button>
           
@@ -88,11 +88,11 @@ export function LuxuryNavbar() {
             <div className="relative">
               <button 
                 onClick={() => setShowUserDropdown(!showUserDropdown)} 
-                className="hidden md:flex items-center gap-1.5 text-typography-primary hover:text-brand-pink transition-colors"
+                className="flex items-center gap-1.5 text-typography-primary hover:text-brand-pink transition-colors"
                 title="Account Menu"
               >
                 <User className="w-5 h-5" strokeWidth={1.5} />
-                <span className="text-[10px] uppercase font-bold tracking-wider max-w-[80px] truncate">
+                <span className="hidden md:inline text-[10px] uppercase font-bold tracking-wider max-w-[80px] truncate">
                   {user.user_metadata?.full_name || user.email?.split("@")[0]}
                 </span>
               </button>
@@ -120,7 +120,7 @@ export function LuxuryNavbar() {
               )}
             </div>
           ) : (
-            <Link to="/auth" className="hidden md:block text-typography-primary hover:text-brand-pink transition-colors" title="Sign In">
+            <Link to="/auth" className="text-typography-primary hover:text-brand-pink transition-colors" title="Sign In">
               <User className="w-5 h-5" strokeWidth={1.5} />
             </Link>
           )}
@@ -209,32 +209,6 @@ export function LuxuryNavbar() {
         )}
       </AnimatePresence>
 
-      {/* Mobile Bottom Navigation */}
-      <div className="lg:hidden fixed bottom-0 inset-x-0 bg-surface-white border-t border-surface-light px-6 py-3 flex justify-between items-center z-50 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-        <Link to="/" onClick={() => setIsOpen(false)} className="flex flex-col items-center gap-1 text-typography-primary hover:text-brand-pink transition-colors">
-          <Home className="w-5 h-5" strokeWidth={1.5} />
-          <span className="text-[10px] uppercase font-bold tracking-widest">Home</span>
-        </Link>
-        <Link to="/shop" onClick={() => setIsOpen(false)} className="flex flex-col items-center gap-1 text-typography-primary hover:text-brand-pink transition-colors">
-          <Search className="w-5 h-5" strokeWidth={1.5} />
-          <span className="text-[10px] uppercase font-bold tracking-widest">Shop</span>
-        </Link>
-        <button onClick={() => { setIsOpen(false); openCart(); }} className="flex flex-col items-center gap-1 text-typography-primary hover:text-brand-pink transition-colors relative">
-          <div className="relative">
-            <ShoppingBag className="w-5 h-5" strokeWidth={1.5} />
-            {items.length > 0 && (
-              <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-brand-pink text-white text-[8px] font-bold rounded-full flex items-center justify-center">
-                {items.length}
-              </span>
-            )}
-          </div>
-          <span className="text-[10px] uppercase font-bold tracking-widest">Cart</span>
-        </button>
-        <button onClick={() => setIsOpen(!isOpen)} className="flex flex-col items-center gap-1 text-typography-primary hover:text-brand-pink transition-colors">
-          <Menu className="w-5 h-5" strokeWidth={1.5} />
-          <span className="text-[10px] uppercase font-bold tracking-widest">Menu</span>
-        </button>
-      </div>
     </header>
   );
 }
