@@ -34,6 +34,16 @@ export function SettingsPage() {
   const [heroCtaText, setHeroCtaText] = useState('');
   const [heroCtaLink, setHeroCtaLink] = useState('');
 
+  const [hero2Title, setHero2Title] = useState('');
+  const [hero2ImageUrl, setHero2ImageUrl] = useState('');
+  const [hero2CtaText, setHero2CtaText] = useState('');
+  const [hero2CtaLink, setHero2CtaLink] = useState('');
+
+  const [hero3Title, setHero3Title] = useState('');
+  const [hero3ImageUrl, setHero3ImageUrl] = useState('');
+  const [hero3CtaText, setHero3CtaText] = useState('');
+  const [hero3CtaLink, setHero3CtaLink] = useState('');
+
   // Tab 4: Homepage Sections
   // Editorial
   const [editorialTitle, setEditorialTitle] = useState('');
@@ -104,11 +114,23 @@ export function SettingsPage() {
       const homepage = settings.homepage || {};
       setAnnouncementText(homepage.announcement_text || 'Free Shipping for Orders Over $500');
 
-      const hero = homepage.hero || {};
+      const hero = homepage.hero || homepage.heros?.[0] || {};
       setHeroTitle(hero.title || 'Payday Special Offer');
       setHeroImageUrl(hero.image_url || 'https://images.unsplash.com/photo-1543163521-1bf539c55dd2?q=80&w=2000&auto=format&fit=crop');
       setHeroCtaText(hero.cta_text || 'Shop Now');
       setHeroCtaLink(hero.cta_link || '/shop');
+
+      const hero2 = homepage.heros?.[1] || {};
+      setHero2Title(hero2.title || '');
+      setHero2ImageUrl(hero2.image_url || '');
+      setHero2CtaText(hero2.cta_text || '');
+      setHero2CtaLink(hero2.cta_link || '');
+
+      const hero3 = homepage.heros?.[2] || {};
+      setHero3Title(hero3.title || '');
+      setHero3ImageUrl(hero3.image_url || '');
+      setHero3CtaText(hero3.cta_text || '');
+      setHero3CtaLink(hero3.cta_link || '');
 
       const editorial = homepage.editorial || {};
       setEditorialTitle(editorial.title || 'New In');
@@ -185,6 +207,26 @@ export function SettingsPage() {
             cta_text: heroCtaText.trim(),
             cta_link: heroCtaLink.trim(),
           },
+          heros: [
+            {
+              title: heroTitle.trim(),
+              image_url: heroImageUrl.trim(),
+              cta_text: heroCtaText.trim(),
+              cta_link: heroCtaLink.trim(),
+            },
+            ...(hero2ImageUrl.trim() ? [{
+              title: hero2Title.trim(),
+              image_url: hero2ImageUrl.trim(),
+              cta_text: hero2CtaText.trim(),
+              cta_link: hero2CtaLink.trim(),
+            }] : []),
+            ...(hero3ImageUrl.trim() ? [{
+              title: hero3Title.trim(),
+              image_url: hero3ImageUrl.trim(),
+              cta_text: hero3CtaText.trim(),
+              cta_link: hero3CtaLink.trim(),
+            }] : [])
+          ],
           editorial: {
             title: editorialTitle.trim(),
             subtitle: editorialSubtitle.trim(),
@@ -256,7 +298,7 @@ export function SettingsPage() {
   const tenantId = tenant?.id || '';
 
   return (
-    <form onSubmit={handleSave} className="space-y-6 max-w-5xl">
+    <div className="space-y-6 max-w-5xl">
       {/* Title */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -266,7 +308,8 @@ export function SettingsPage() {
 
         {canEdit && (
           <button
-            type="submit"
+            type="button"
+            onClick={handleSave}
             disabled={isSaving}
             className="flex items-center justify-center gap-2 bg-gradient-to-r from-[#fb7a90] to-[#f16881] text-white rounded-xl px-5 py-2.5 font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all self-start sm:self-auto disabled:opacity-50"
           >
@@ -594,6 +637,110 @@ export function SettingsPage() {
                 </div>
               </div>
             </div>
+
+            <div className="bg-[#111827] border border-white/5 p-5 rounded-2xl space-y-4">
+              <h3 className="text-white font-semibold text-sm border-b border-white/5 pb-2">Hero Banner 2 (Optional)</h3>
+              
+              <div className="flex flex-col gap-2">
+                <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Hero Banner Title</label>
+                <input
+                  type="text"
+                  value={hero2Title}
+                  onChange={e => setHero2Title(e.target.value)}
+                  disabled={!canEdit}
+                  placeholder="Exclusive Bags"
+                  className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#fb7a90]/50 transition-colors"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Hero Banner Image URL / Photo</label>
+                <ImageUploadInput
+                  value={hero2ImageUrl}
+                  onChange={setHero2ImageUrl}
+                  tenantId={tenantId}
+                  placeholder="Leave empty to disable"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Button CTA Text</label>
+                  <input
+                    type="text"
+                    value={hero2CtaText}
+                    onChange={e => setHero2CtaText(e.target.value)}
+                    disabled={!canEdit}
+                    placeholder="Discover"
+                    className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#fb7a90]/50 transition-colors"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Button Link Route</label>
+                  <input
+                    type="text"
+                    value={hero2CtaLink}
+                    onChange={e => setHero2CtaLink(e.target.value)}
+                    disabled={!canEdit}
+                    placeholder="/shop"
+                    className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#fb7a90]/50 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-[#111827] border border-white/5 p-5 rounded-2xl space-y-4">
+              <h3 className="text-white font-semibold text-sm border-b border-white/5 pb-2">Hero Banner 3 (Optional)</h3>
+              
+              <div className="flex flex-col gap-2">
+                <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Hero Banner Title</label>
+                <input
+                  type="text"
+                  value={hero3Title}
+                  onChange={e => setHero3Title(e.target.value)}
+                  disabled={!canEdit}
+                  placeholder="Limited Edition"
+                  className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#fb7a90]/50 transition-colors"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Hero Banner Image URL / Photo</label>
+                <ImageUploadInput
+                  value={hero3ImageUrl}
+                  onChange={setHero3ImageUrl}
+                  tenantId={tenantId}
+                  placeholder="Leave empty to disable"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Button CTA Text</label>
+                  <input
+                    type="text"
+                    value={hero3CtaText}
+                    onChange={e => setHero3CtaText(e.target.value)}
+                    disabled={!canEdit}
+                    placeholder="Shop Now"
+                    className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#fb7a90]/50 transition-colors"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Button Link Route</label>
+                  <input
+                    type="text"
+                    value={hero3CtaLink}
+                    onChange={e => setHero3CtaLink(e.target.value)}
+                    disabled={!canEdit}
+                    placeholder="/shop"
+                    className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#fb7a90]/50 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
@@ -757,6 +904,6 @@ export function SettingsPage() {
         )}
 
       </div>
-    </form>
+    </div>
   );
 }

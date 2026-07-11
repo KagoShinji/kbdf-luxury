@@ -107,7 +107,9 @@ export function HomePage() {
   const settings = (tenant?.store_settings as any) || {};
   const homepage = settings.homepage || {};
 
-  const heros = homepage.heros || DEFAULT_HEROS;
+  const heros = homepage.heros?.length > 0 
+    ? homepage.heros 
+    : (homepage.hero?.image_url ? [homepage.hero] : DEFAULT_HEROS);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -135,17 +137,22 @@ export function HomePage() {
                 <img 
                   src={h.image_url} 
                   alt={h.title} 
-                  className="w-full h-auto max-h-[80vh] object-cover opacity-90"
+                  className="w-full h-[70vh] md:h-[80vh] object-cover object-top opacity-90"
                 />
               )}
-              <div className="absolute inset-0 flex flex-col justify-end px-6 md:px-16 pb-[8%]">
+              
+              {/* Subtle gradient overlay to ensure dark text readability */}
+              <div className="absolute inset-0 bg-gradient-to-tr from-white/95 via-white/50 to-transparent pointer-events-none"></div>
+              <div className="absolute inset-0 bg-gradient-to-t from-white/80 via-transparent to-transparent pointer-events-none"></div>
+
+              <div className="absolute inset-0 flex flex-col justify-end px-6 md:px-16 pb-[8%] z-10">
                 <FadeUp>
-                  <h1 className="text-4xl md:text-6xl font-serif italic text-typography-primary max-w-lg leading-tight tracking-tight drop-shadow-sm">
+                  <h1 className="text-4xl md:text-6xl font-serif italic text-typography-primary max-w-lg leading-tight tracking-tight drop-shadow-md">
                     {h.title}
                   </h1>
                   <Link 
                     to={h.cta_link || "/shop"} 
-                    className="mt-6 text-xs font-medium uppercase tracking-widest text-typography-primary border-b border-typography-primary pb-1 inline-block w-max hover:text-brand-pink hover:border-brand-pink transition-colors"
+                    className="mt-6 text-xs font-medium uppercase tracking-widest text-typography-primary border-b border-typography-primary pb-1 inline-block w-max hover:text-brand-pink hover:border-brand-pink transition-colors drop-shadow-sm"
                   >
                     {h.cta_text || "Shop Now"}
                   </Link>
@@ -206,31 +213,36 @@ export function HomePage() {
 
       {/* 4. Editorial Bento Grid */}
       <section className="w-full max-w-[1600px] mx-auto px-4 md:px-8 py-20">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-0 border border-surface-light">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-[2px] bg-white">
           {/* Main Focus Image */}
-          <div className="relative aspect-[4/5] md:aspect-auto bg-surface-offWhite overflow-hidden group border-r border-surface-light">
+          <div className="relative aspect-[4/5] md:aspect-auto bg-surface-offWhite overflow-hidden group">
             {editorial.banner_image && (
-              <img src={editorial.banner_image} className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-1000" alt="Editorial Focus" />
+              <img src={editorial.banner_image} className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-1000 ease-out" alt="Editorial Focus" />
             )}
             
-            <div className="absolute bottom-8 left-8 md:bottom-12 md:left-12 z-10">
-              <h2 className="text-3xl md:text-5xl font-serif text-typography-primary mb-3 drop-shadow-sm">{editorial.title}</h2>
-              <p className="text-xs md:text-sm text-typography-primary mb-6 font-medium drop-shadow-sm">{editorial.subtitle || "Your next obsession starts here."}</p>
-              <Link to={editorial.cta_link || "/shop"} className="text-xs uppercase tracking-widest text-typography-primary border-b border-typography-primary pb-1 font-bold hover:text-brand-pink hover:border-brand-pink transition-colors inline-block">{editorial.cta_text || "Shop Now"}</Link>
+            {/* Subtle gradient overlay to ensure dark text readability */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-white/95 via-white/50 to-transparent pointer-events-none"></div>
+            <div className="absolute inset-0 bg-gradient-to-t from-white/80 via-transparent to-transparent pointer-events-none"></div>
+            
+            <div className="absolute bottom-8 left-8 md:bottom-16 md:left-12 z-10 max-w-sm">
+              <h2 className="text-5xl md:text-7xl font-serif italic text-brand-navy mb-4 drop-shadow-md">{editorial.title}</h2>
+              <p className="text-[10px] md:text-xs uppercase tracking-[0.25em] text-brand-navy mb-10 font-medium drop-shadow-sm leading-relaxed">{editorial.subtitle || "Your next obsession starts here."}</p>
+              <Link to={editorial.cta_link || "/shop"} className="inline-block px-10 py-4 border border-brand-navy text-[10px] uppercase font-bold tracking-[0.25em] text-brand-navy hover:bg-brand-navy hover:text-white transition-all duration-500 backdrop-blur-sm bg-white/10 shadow-sm">
+                {editorial.cta_text || "Shop Now"}
+              </Link>
             </div>
           </div>
 
           {/* 4-Square Grid */}
-          <div className="grid grid-cols-2 gap-0">
+          <div className="grid grid-cols-2 gap-[2px] bg-white">
             {(editorial.grid_images || DEFAULT_EDITORIAL.grid_images).map((src: string, i: number) => (
               <div 
                 key={i} 
-                className={`relative aspect-square bg-surface-offWhite overflow-hidden group 
-                  ${i % 2 === 0 ? 'border-r border-surface-light' : ''} 
-                  ${i < 2 ? 'border-b border-surface-light' : ''}
-                `}
+                className="relative aspect-square bg-surface-offWhite overflow-hidden group"
               >
-                 <img src={src} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" alt="Product Thumbnail" />
+                 <img src={src} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000 ease-out" alt="Product Thumbnail" />
+                 {/* Elegant hover overlay */}
+                 <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors duration-500 pointer-events-none"></div>
               </div>
             ))}
           </div>
@@ -238,20 +250,31 @@ export function HomePage() {
       </section>
 
       {/* 5. Featured Collections */}
-      <section className="w-full bg-[#f4f2ed] py-16">
+      <section className="w-full bg-surface-white py-16">
         <div className="max-w-[1600px] mx-auto px-4 md:px-8">
-          <div className="flex gap-6 md:gap-8 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-4 md:grid md:grid-cols-3">
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2 md:gap-6">
             {collections.map((col: any, i: number) => (
-              <div key={i} className="relative shrink-0 w-[85vw] sm:w-[60vw] md:w-auto snap-center aspect-[4/5] bg-surface-offWhite group overflow-hidden">
+              <Link 
+                key={i} 
+                to={`/shop?search=${encodeURIComponent(col.title)}`}
+                className="relative aspect-[4/5] bg-surface-offWhite group overflow-hidden block"
+              >
                 {col.image_url && (
-                  <img src={col.image_url} className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000" alt={col.title} />
+                  <img src={col.image_url} className="absolute inset-0 w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000 ease-out" alt={col.title} />
                 )}
-                {/* Dark gradient at bottom to make white text pop */}
-                <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/0 to-transparent opacity-80 group-hover:opacity-100 transition-opacity duration-500"></div>
-                <div className="absolute bottom-8 left-0 w-full text-center px-4 z-10">
-                  <span className="text-white text-2xl font-bold tracking-wide drop-shadow-md">{col.title}</span>
+                {/* Elegant full overlay that darkens slightly on hover */}
+                <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors duration-700"></div>
+                
+                {/* Centered Typography with hover animation */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center p-6 z-10">
+                  <span className="text-white text-center text-2xl md:text-3xl font-serif uppercase tracking-[0.2em] drop-shadow-lg transform group-hover:-translate-y-2 transition-transform duration-700">
+                    {col.title}
+                  </span>
+                  <span className="mt-4 text-[10px] md:text-xs text-white uppercase tracking-widest border-b border-white pb-1 opacity-0 transform translate-y-4 group-hover:translate-y-0 group-hover:opacity-100 transition-all duration-700">
+                    Explore Collection
+                  </span>
                 </div>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -326,8 +349,8 @@ export function HomePage() {
         <div className="flex w-full">
           <div className="animate-marquee flex w-max">
             {[...(social.images || DEFAULT_SOCIAL.images), ...(social.images || DEFAULT_SOCIAL.images)].map((src: string, i: number) => (
-              <a key={i} href="#" className="relative w-[50vw] md:w-[25vw] lg:w-[20vw] aspect-square group overflow-hidden block shrink-0">
-                 <img src={src} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700" alt="Instagram Post" />
+              <a key={i} href="#" className="relative w-[50vw] md:w-[25vw] lg:w-[20vw] aspect-[4/5] group overflow-hidden block shrink-0">
+                 <img src={src} className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-700" alt="Instagram Post" />
                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
                     <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">{social.handle || "@kbdf.ph"}</span>
                  </div>

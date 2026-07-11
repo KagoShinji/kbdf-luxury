@@ -8,6 +8,7 @@ export function ShopPage() {
   const location = useLocation();
   const searchParams = new URLSearchParams(location.search);
   const currentCategory = searchParams.get("category") || "all";
+  const searchQuery = searchParams.get("search") || undefined;
   
   const [categories, setCategories] = useState<{ id: string; label: string }[]>([
     { id: "all", label: "All Products" }
@@ -58,7 +59,7 @@ export function ShopPage() {
         {/* Page Header */}
         <div className="mb-12 border-b border-surface-light pb-6">
           <h1 className="text-3xl font-serif text-typography-primary">
-            The Collection
+            {searchQuery ? `Results for "${searchQuery}"` : 'The Collection'}
           </h1>
           <p className="text-[10px] tracking-widest uppercase font-bold text-brand-peach mt-2">
             Explore our meticulously curated pieces.
@@ -92,7 +93,7 @@ export function ShopPage() {
 
           {/* Main Product Grid */}
           <main className="flex-1">
-             <ProductGrid hideHeader category={currentCategory} />
+             <ProductGrid hideHeader category={currentCategory} searchQuery={searchQuery} />
           </main>
 
         </div>

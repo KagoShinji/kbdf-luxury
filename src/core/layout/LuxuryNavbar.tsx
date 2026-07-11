@@ -5,10 +5,12 @@ import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../../features/cart/CartContext";
 import { useTenant } from "../context/TenantContext";
 import { useUserAuth } from "../context/UserAuthContext";
+import { SearchOverlay } from "./SearchOverlay";
 
 export function LuxuryNavbar() {
   const [isOpen, setIsOpen] = useState(false);
   const [showUserDropdown, setShowUserDropdown] = useState(false);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
   
   const { openCart, items } = useCart();
   const { tenant } = useTenant();
@@ -79,7 +81,10 @@ export function LuxuryNavbar() {
 
         {/* Right: Actions */}
         <div className="flex flex-1 items-center justify-end gap-4 lg:gap-6 relative">
-          <button className="hidden lg:block text-typography-primary hover:text-brand-pink transition-colors">
+          <button 
+            onClick={() => setIsSearchOpen(true)}
+            className="text-typography-primary hover:text-brand-pink transition-colors"
+          >
             <Search className="w-5 h-5" strokeWidth={1.5} />
           </button>
           
@@ -209,6 +214,7 @@ export function LuxuryNavbar() {
         )}
       </AnimatePresence>
 
+      <SearchOverlay isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
     </header>
   );
 }

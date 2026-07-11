@@ -1,5 +1,5 @@
 import { supabase, TENANT_ID } from '../../../lib/supabase/supabaseClient';
-import type { Product } from '../types';
+import type { Product, Review } from '../types';
 
 const MOCK_PRODUCTS: Product[] = [
   {
@@ -44,14 +44,19 @@ const MOCK_PRODUCTS: Product[] = [
   }
 ];
 
-export async function fetchProducts(categorySlug?: string): Promise<Product[]> {
+export async function fetchProducts(categorySlug?: string, searchQuery?: string): Promise<Product[]> {
   if (!TENANT_ID || TENANT_ID === 'will-be-set-after-migration-seed') {
     // If tenant variables are placeholders, return mock products gracefully
     console.log('Using mock products (tenant id is unset)');
+    let filtered = MOCK_PRODUCTS;
     if (categorySlug && categorySlug !== 'all') {
-      return MOCK_PRODUCTS.filter(p => p.category_id === categorySlug);
+      filtered = filtered.filter(p => p.category_id === categorySlug);
     }
-    return MOCK_PRODUCTS;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filtered = filtered.filter(p => p.title.toLowerCase().includes(q) || (p.brand && p.brand.toLowerCase().includes(q)));
+    }
+    return filtered;
   }
 
   try {
@@ -75,6 +80,10 @@ export async function fetchProducts(categorySlug?: string): Promise<Product[]> {
       } else {
         return [];
       }
+    }
+
+    if (searchQuery) {
+      query = query.or(`brand.ilike.%${searchQuery}%,title.ilike.%${searchQuery}%`);
     }
 
     const { data, error } = await query;
@@ -135,5 +144,32 @@ export async function fetchProductBySlug(slug: string): Promise<Product | null> 
   } catch (err) {
     console.error('Error fetching product by slug:', err);
     return MOCK_PRODUCTS.find(p => p.slug === slug) || null;
+  }
+}
+
+export async function fetchProductReviews(itemId: string): Promise<Review[]> {
+  if (!TENANT_ID || TENANT_ID === 'will-be-set-after-migration-seed') {
+    return [];
+  }
+  
+  try {
+    const { data, error } = await supabase
+      .from('product_reviews')
+      .select('*')
+      .eq('tenant_id', TENANT_ID)
+      .eq('item_id', itemId)
+      .eq('is_approved', true)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      // Return empty if table doesn't exist yet (before migration runs)
+      console.warn('Error fetching reviews (maybe table not created yet):', error.message);
+      return [];
+    }
+    
+    return data as Review[];
+  } catch (err) {
+    console.error('Error in fetchProductReviews:', err);
+    return [];
   }
 }

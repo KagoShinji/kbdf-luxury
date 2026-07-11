@@ -88,45 +88,45 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
 
             {/* Modal Card */}
             <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 15 }}
+              initial={{ opacity: 0, scale: 0.95, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              exit={{ opacity: 0, scale: 0.95, y: 10 }}
               transition={{ type: 'spring', damping: 25, stiffness: 350 }}
-              className="relative w-full max-w-sm bg-[#111827] border border-white/10 rounded-2xl p-6 shadow-2xl z-10 text-center flex flex-col items-center"
+              className="relative w-full max-w-sm bg-[#f8f5f2] border border-surface-light rounded-sm p-10 shadow-diffusion z-10 text-center flex flex-col items-center"
             >
               {/* Close Button */}
               <button 
                 onClick={dismiss}
-                className="absolute top-3.5 right-3.5 text-white/40 hover:text-white transition-colors"
+                className="absolute top-4 right-4 text-typography-muted hover:text-brand-pink transition-colors"
               >
-                <X className="w-4 h-4" />
+                <X className="w-4 h-4" strokeWidth={1.5} />
               </button>
 
               {/* Dynamic Icon */}
-              <div className="mb-4">
+              <div className="mb-6">
                 {config.type === 'success' ? (
-                  <div className="w-12 h-12 rounded-full bg-emerald-500/10 flex items-center justify-center text-emerald-400 border border-emerald-500/20 animate-pulse">
-                    <CheckCircle2 className="w-6 h-6" strokeWidth={2.5} />
+                  <div className="w-12 h-12 flex items-center justify-center text-emerald-600 mb-2">
+                    <CheckCircle2 className="w-10 h-10" strokeWidth={1} />
                   </div>
                 ) : config.type === 'error' ? (
-                  <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center text-red-400 border border-red-500/20 animate-pulse">
-                    <AlertTriangle className="w-6 h-6" strokeWidth={2.5} />
+                  <div className="w-12 h-12 flex items-center justify-center text-brand-pink mb-2">
+                    <AlertTriangle className="w-10 h-10" strokeWidth={1} />
                   </div>
                 ) : (
-                  <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 border border-blue-500/20 animate-pulse">
-                    <CheckCircle2 className="w-6 h-6" strokeWidth={2.5} />
+                  <div className="w-12 h-12 flex items-center justify-center text-brand-navy mb-2">
+                    <CheckCircle2 className="w-10 h-10" strokeWidth={1} />
                   </div>
                 )}
               </div>
 
               {/* Title & Message */}
-              <h3 className="text-white font-bold text-sm uppercase tracking-wider mb-1.5">{config.title}</h3>
-              <p className="text-white/70 text-xs leading-relaxed max-w-[260px]">{config.message}</p>
+              <h3 className="text-brand-navy font-serif font-bold text-lg uppercase tracking-[0.2em] mb-3">{config.title}</h3>
+              <p className="text-typography-muted font-light text-sm tracking-wide leading-relaxed max-w-[260px] mb-8">{config.message}</p>
 
               {/* Dismiss Button */}
               <button 
                 onClick={dismiss}
-                className="mt-5 px-4 py-2 bg-white/5 hover:bg-white/10 text-white text-[10px] uppercase font-bold tracking-wider rounded-lg border border-white/5 transition-colors"
+                className="w-full py-3.5 border border-brand-navy text-brand-navy hover:bg-brand-navy hover:text-white text-[10px] uppercase font-bold tracking-[0.25em] transition-all duration-300"
               >
                 Dismiss
               </button>

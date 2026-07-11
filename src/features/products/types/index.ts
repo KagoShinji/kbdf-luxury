@@ -22,3 +22,15 @@ export interface Product {
   sizes?: { size: string; quantity: number }[];
   created_at: string;
 }
+
+export interface Review {
+  id: string;
+  author_name: string;
+  rating: number;
+  content: string;
+  images?: string[];
+  size?: string;
+  color?: string;
+  is_verified_buyer: boolean;
+  created_at: string;
+}

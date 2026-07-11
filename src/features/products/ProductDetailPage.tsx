@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { ShoppingBag, ChevronDown, Star } from 'lucide-react';
-import { fetchProductBySlug } from './api';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { ShoppingBag, ChevronDown, Star, ArrowLeft } from 'lucide-react';
+import { fetchProductBySlug, fetchProducts } from './api';
 import type { Product } from './types';
 import { useCart } from '../cart/CartContext';
 import { useNotification } from '../../core/context/NotificationContext';
@@ -10,6 +10,7 @@ import { ProductCarousel } from './components/ProductCarousel';
 
 export function ProductDetailPage() {
   const { slug } = useParams<{ slug: string }>();
+  const navigate = useNavigate();
   const { addToCart } = useCart();
   const { showError, showSuccess } = useNotification();
 
@@ -18,6 +19,9 @@ export function ProductDetailPage() {
   const [selectedSize, setSelectedSize] = useState<string | null>(null);
   const [selectedColor, setSelectedColor] = useState<string>('Black'); // Mock color state
   const [errorMsg, setErrorMsg] = useState('');
+  
+  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
+  const [recentProducts, setRecentProducts] = useState<Product[]>([]);
   
   // Accordion state
   const [detailsOpen, setDetailsOpen] = useState(true);
@@ -31,6 +35,25 @@ export function ProductDetailPage() {
           setProduct(data);
           if (data?.sizes && data.sizes.length === 1) {
             setSelectedSize(data.sizes[0].size);
+          }
+          if (data) {
+            fetchProducts().then(related => {
+              setRelatedProducts(related.filter(p => p.category_id === data.category_id && p.id !== data.id));
+            }).catch(console.error);
+
+            const recentSlugs: string[] = JSON.parse(localStorage.getItem('recentlyViewed') || '[]');
+            const newRecentSlugs = [data.slug, ...recentSlugs.filter(s => s !== data.slug)].slice(0, 5);
+            localStorage.setItem('recentlyViewed', JSON.stringify(newRecentSlugs));
+
+            const slugsToFetch = newRecentSlugs.filter(s => s !== data.slug);
+            if (slugsToFetch.length > 0) {
+              Promise.all(slugsToFetch.map(s => fetchProductBySlug(s)))
+                .then(results => {
+                  setRecentProducts(results.filter((p): p is Product => p !== null));
+                }).catch(console.error);
+            } else {
+              setRecentProducts([]);
+            }
           }
         })
         .catch(err => {
@@ -112,13 +135,24 @@ export function ProductDetailPage() {
 
       <div className="max-w-[1440px] mx-auto pt-6 px-4 md:px-8">
         
-        {/* Breadcrumbs */}
-        <div className="text-[10px] uppercase tracking-widest text-typography-muted font-semibold mb-6">
-          <Link to="/" className="hover:text-brand-navy transition-colors">Home</Link>
-          <span className="mx-2">/</span>
-          <Link to="/shop" className="hover:text-brand-navy transition-colors">Shoes</Link>
-          <span className="mx-2">/</span>
-          <span className="text-typography-primary">{product.title}</span>
+        {/* Navigation & Breadcrumbs */}
+        <div className="flex flex-col md:flex-row md:items-center gap-4 mb-6">
+          <button 
+            onClick={() => navigate(-1)} 
+            className="flex items-center gap-2 text-xs font-bold uppercase tracking-widest text-brand-navy hover:text-brand-pink transition-colors w-fit"
+          >
+            <ArrowLeft className="w-4 h-4" /> Back
+          </button>
+          
+          <div className="hidden md:block w-px h-4 bg-surface-light"></div>
+          
+          <div className="text-[10px] uppercase tracking-widest text-typography-muted font-semibold flex items-center flex-wrap gap-1">
+            <Link to="/" className="hover:text-brand-navy transition-colors">Home</Link>
+            <span className="mx-1">/</span>
+            <Link to="/shop" className="hover:text-brand-navy transition-colors">Shop</Link>
+            <span className="mx-1">/</span>
+            <span className="text-typography-primary line-clamp-1 max-w-[200px] md:max-w-none" title={product.title}>{product.title}</span>
+          </div>
         </div>
 
         {/* Layout Grid */}
@@ -312,9 +346,9 @@ export function ProductDetailPage() {
       </div>
       
       {/* Sections below the fold */}
-      <ReviewsSection />
-      <ProductCarousel title="Recently Viewed" />
-      <ProductCarousel title="You May Also Like" />
+      <ReviewsSection productId={product.id} />
+      {recentProducts.length > 0 && <ProductCarousel title="Recently Viewed" products={recentProducts} />}
+      {relatedProducts.length > 0 && <ProductCarousel title="You May Also Like" products={relatedProducts} />}
       
     </div>
   );

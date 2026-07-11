@@ -6,22 +6,23 @@ import { ProductCard } from "./ProductCard";
 interface ProductGridProps {
   hideHeader?: boolean;
   category?: string;
+  searchQuery?: string;
 }
 
-export function ProductGrid({ hideHeader = false, category = "all" }: ProductGridProps = {}) {
+export function ProductGrid({ hideHeader = false, category = "all", searchQuery }: ProductGridProps = {}) {
   const [products, setProducts] = useState<Product[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     setIsLoading(true);
-    fetchProducts(category).then(data => {
+    fetchProducts(category, searchQuery).then(data => {
       setProducts(data);
       setIsLoading(false);
     }).catch(err => {
       console.error(err);
       setIsLoading(false);
     });
-  }, [category]);
+  }, [category, searchQuery]);
 
   return (
     <section className="py-12 px-4 md:px-12 max-w-7xl mx-auto">
@@ -39,9 +40,13 @@ export function ProductGrid({ hideHeader = false, category = "all" }: ProductGri
       )}
 
       {isLoading ? (
-        <div className="flex gap-4 overflow-x-auto snap-x snap-mandatory no-scrollbar pb-8 px-4 -mx-4 md:px-0 md:mx-0">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6">
           {[1,2,3,4].map((i) => (
-            <div key={i} className="animate-pulse bg-surface-light h-[28rem] shrink-0 w-[65vw] sm:w-[45vw] md:w-[300px] snap-center"></div>
+            <div key={i} className="p-2 md:p-4">
+              <div className="animate-pulse bg-surface-light w-full aspect-[4/5] mb-4"></div>
+              <div className="animate-pulse bg-surface-light h-4 w-3/4 mb-2"></div>
+              <div className="animate-pulse bg-surface-light h-4 w-1/2"></div>
+            </div>
           ))}
         </div>
       ) : products.length === 0 ? (
@@ -49,9 +54,9 @@ export function ProductGrid({ hideHeader = false, category = "all" }: ProductGri
           No products found under this collection.
         </div>
       ) : (
-        <div className="flex overflow-x-auto snap-x snap-mandatory no-scrollbar pb-8 border-y border-surface-light md:border-l md:border-y-0 md:grid md:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 md:gap-6 border-t md:border-t-0 pt-4 md:pt-0 border-surface-light">
           {products.map((product, idx) => (
-            <div key={product.id} className="shrink-0 w-[75vw] sm:w-[50vw] md:w-auto snap-center border-r border-surface-light">
+            <div key={product.id}>
               <ProductCard product={product} index={idx} />
             </div>
           ))}

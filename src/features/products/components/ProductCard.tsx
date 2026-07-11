@@ -15,7 +15,7 @@ export function ProductCard({ product, index }: ProductCardProps) {
     <FadeUp delay={index * 0.1}>
       <div 
         onClick={() => navigate(`/product/${product.slug}`)}
-        className="group cursor-pointer flex flex-col bg-surface-white h-[400px] relative p-5"
+        className="group cursor-pointer flex flex-col bg-surface-white h-[420px] relative"
       >
 
 
@@ -28,16 +28,16 @@ export function ProductCard({ product, index }: ProductCardProps) {
         </button>
 
         {/* Image Area */}
-        <div className="w-full flex-1 flex items-center justify-center mt-6 mb-4 overflow-hidden bg-transparent">
+        <div className="w-full flex-1 overflow-hidden bg-transparent">
           <img 
             src={product.image_urls[0]} 
             alt={product.title} 
-            className="object-contain w-[90%] max-h-full group-hover:scale-105 transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] mix-blend-multiply"
+            className="object-cover w-full h-full group-hover:scale-105 transition-transform duration-700 ease-[cubic-bezier(0.32,0.72,0,1)] mix-blend-multiply"
           />
         </div>
         
         {/* Content bottom */}
-        <div className="mt-auto flex flex-col">
+        <div className="flex flex-col p-5 pt-4">
 
 
           {/* Title and Price */}
