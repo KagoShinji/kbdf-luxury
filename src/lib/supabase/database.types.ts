@@ -16,6 +16,7 @@ export interface Database {
           timezone: string;
           store_settings: Json;
           is_active: boolean;
+          reservation_duration_seconds: number;
           created_at: string;
           updated_at: string;
         };
@@ -31,6 +32,7 @@ export interface Database {
           timezone?: string;
           store_settings?: Json;
           is_active?: boolean;
+          reservation_duration_seconds?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -84,6 +86,7 @@ export interface Database {
           access_payment_methods: boolean;
           access_orders: boolean;
           access_promo_codes: boolean;
+          access_leeway: boolean;
           created_at: string;
           updated_at: string;
         };
@@ -109,6 +112,7 @@ export interface Database {
           access_payment_methods?: boolean;
           access_orders?: boolean;
           access_promo_codes?: boolean;
+          access_leeway?: boolean;
           created_at?: string;
           updated_at?: string;
         };
@@ -161,6 +165,9 @@ export interface Database {
           image_urls: string[];
            sizes: { size: string; quantity: number }[] | null;
           is_active: boolean;
+          leeway_enabled: boolean;
+          leeway_down_payment_required: boolean;
+          leeway_down_payment_amount: number;
           created_at: string;
           updated_at: string;
         };
@@ -181,6 +188,9 @@ export interface Database {
           image_urls?: string[];
           sizes?: { size: string; quantity: number }[] | null;
           is_active?: boolean;
+          leeway_enabled?: boolean;
+          leeway_down_payment_required?: boolean;
+          leeway_down_payment_amount?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -380,6 +390,112 @@ export interface Database {
         };
         Update: Partial<Database['public']['Tables']['order_items']['Insert']>;
       };
+
+      leeway_accounts: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          customer_id: string;
+          order_id: string;
+          total_amount: number;
+          down_payment_amount: number;
+          remaining_balance: number;
+          payment_schedule: 'weekly' | 'monthly' | 'flexible';
+          status: 'active' | 'completed' | 'defaulted';
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          customer_id: string;
+          order_id: string;
+          total_amount: number;
+          down_payment_amount?: number;
+          remaining_balance?: number;
+          payment_schedule: 'weekly' | 'monthly' | 'flexible';
+          status?: 'active' | 'completed' | 'defaulted';
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['leeway_accounts']['Insert']>;
+      };
+
+      leeway_payments: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          leeway_account_id: string;
+          amount: number;
+          proof_of_payment_url: string;
+          status: 'pending_verification' | 'verified' | 'rejected';
+          payment_type: 'down_payment' | 'installment';
+          admin_notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          leeway_account_id: string;
+          amount: number;
+          proof_of_payment_url: string;
+          status?: 'pending_verification' | 'verified' | 'rejected';
+          payment_type?: 'down_payment' | 'installment';
+          admin_notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['leeway_payments']['Insert']>;
+      };
+
+      leeway_requests: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          customer_id: string;
+          status: 'pending' | 'approved' | 'rejected';
+          admin_notes: string | null;
+          requested_items: any;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          customer_id: string;
+          status?: 'pending' | 'approved' | 'rejected';
+          admin_notes?: string | null;
+          requested_items?: any;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['leeway_requests']['Insert']>;
+      };
+
+      inventory_reservations: {
+        Row: {
+          id: string;
+          tenant_id: string;
+          item_id: string;
+          size: string | null;
+          quantity: number;
+          session_id: string;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tenant_id: string;
+          item_id: string;
+          size?: string | null;
+          quantity: number;
+          session_id: string;
+          expires_at: string;
+          created_at?: string;
+        };
+        Update: Partial<Database['public']['Tables']['inventory_reservations']['Insert']>;
+      };
     };
   };
 }
@@ -399,6 +515,9 @@ export type Order = Database['public']['Tables']['orders']['Row'] & {
   discount_amount?: number;
 };
 export type OrderItem = Database['public']['Tables']['order_items']['Row'];
+export type LeewayAccount = Database['public']['Tables']['leeway_accounts']['Row'];
+export type LeewayPayment = Database['public']['Tables']['leeway_payments']['Row'];
+export type LeewayRequest = Database['public']['Tables']['leeway_requests']['Row'];
 
 export interface PromoCode {
   id: string;
@@ -427,7 +546,8 @@ export type PermissionModule =
   | 'payment_methods'
   | 'settings'
   | 'orders'
-  | 'promo_codes';
+  | 'promo_codes'
+  | 'leeway';
 
 export type PermissionAction = 'create' | 'read' | 'edit' | 'delete';
 

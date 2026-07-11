@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCart } from '../cart/CartContext';
 import { useTenant } from '../../core/context/TenantContext';
 import { supabase, TENANT_ID } from '../../lib/supabase/supabaseClient';
@@ -6,7 +6,7 @@ import { LOCATION_PRESETS } from '../cart/locationData';
 import { ImageUploadInput } from '../admin/components/ImageUploadInput';
 import { useUserAuth } from '../../core/context/UserAuthContext';
 import { useNotification } from '../../core/context/NotificationContext';
-import { Check, X, Clipboard, CreditCard, ShoppingBag, MapPin, Truck, ChevronRight, Download, Loader2, User, LogIn } from 'lucide-react';
+import { Check, X, Clipboard, CreditCard, ShoppingBag, MapPin, Truck, ChevronRight, Download, Loader2, User, LogIn, Clock, AlertTriangle } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 interface PaymentMethod {
@@ -139,13 +139,173 @@ export function CheckoutPage() {
   // Step 2: Delivery Option
   const [deliveryMethod, setDeliveryMethod] = useState<'standard' | 'pickup'>('standard');
 
+  // Reservation system
+  const [sessionId] = useState<string>(() => {
+    if (user?.id) return user.id;
+    let sid = sessionStorage.getItem('checkout_session_id');
+    if (!sid) { sid = crypto.randomUUID(); sessionStorage.setItem('checkout_session_id', sid); }
+    return sid;
+  });
+  const [reservationExpiresAt, setReservationExpiresAt] = useState<Date | null>(null);
+  const [reservationSecsLeft, setReservationSecsLeft] = useState<number>(0);
+  const [isReserving, setIsReserving] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   // Step 3: Payment Option
   const [selectedMethodId, setSelectedMethodId] = useState<string>('walk_in');
   const [proofOfPaymentUrl, setProofOfPaymentUrl] = useState('');
 
-  // Currency Symbol
+  // Currency Symbol and Tenant ID
   const currencySymbol = tenant?.currency_symbol || '₱';
   const tenantId = tenant?.id || TENANT_ID || '';
+
+  // Reservation: start countdown when expiresAt is set
+  useEffect(() => {
+    if (!reservationExpiresAt) return;
+    if (timerRef.current) clearInterval(timerRef.current);
+
+    const tick = () => {
+      const secsLeft = Math.max(0, Math.round((reservationExpiresAt.getTime() - Date.now()) / 1000));
+      setReservationSecsLeft(secsLeft);
+      if (secsLeft === 0) {
+        if (timerRef.current) clearInterval(timerRef.current);
+        // Release and kick back to step 1
+        supabase.rpc('release_reservation', { p_session_id: sessionId, p_tenant_id: tenantId });
+        setReservationExpiresAt(null);
+        setStep(1);
+        showInfo('⏱ Your reservation expired. Items have been released back to inventory.');
+      }
+    };
+    tick();
+    timerRef.current = setInterval(tick, 1000);
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [reservationExpiresAt]);
+
+  // Release reservation on page unmount
+  useEffect(() => {
+    return () => {
+      if (reservationExpiresAt && tenantId) {
+        supabase.rpc('release_reservation', { p_session_id: sessionId, p_tenant_id: tenantId });
+      }
+    };
+  }, [reservationExpiresAt, tenantId, sessionId]);
+
+  const handleReserveAndAdvance = useCallback(async (method: 'standard' | 'pickup') => {
+    setDeliveryMethod(method);
+    setIsReserving(true);
+    try {
+      const itemsPayload = items.map(i => ({
+        item_id: i.id,
+        size: i.selectedSize || null,
+        quantity: i.quantity
+      }));
+
+      const { data, error } = await supabase.rpc('reserve_inventory', {
+        p_tenant_id: tenantId,
+        p_items: itemsPayload,
+        p_session_id: sessionId
+      });
+
+      if (error) throw error;
+
+      if (!data.success) {
+        const unavailable = (data.unavailable_items || []) as any[];
+        const names = unavailable.map((u: any) => u.title || 'Item').join(', ');
+        showError(`Sorry, these items no longer have sufficient stock: ${names}`);
+        return; // stay on step 2
+      }
+
+      if (data.reserved && data.expires_at) {
+        setReservationExpiresAt(new Date(data.expires_at));
+      }
+
+      setStep(3);
+    } catch (err: any) {
+      console.error(err);
+      showError('Failed to check availability. Please try again.');
+    } finally {
+      setIsReserving(false);
+    }
+  }, [items, tenantId, sessionId]);
+
+  const formatSecsLeft = (secs: number) => {
+    const m = Math.floor(secs / 60).toString().padStart(2, '0');
+    const s = (secs % 60).toString().padStart(2, '0');
+    return `${m}:${s}`;
+  };
+
+  // Leeway states
+  const [leewaySchedule, setLeewaySchedule] = useState<'weekly' | 'monthly' | 'flexible'>('weekly');
+  const [leewayDownPayment, setLeewayDownPayment] = useState<number>(0);
+  const [leewayPaymentMethodId, setLeewayPaymentMethodId] = useState<string>('walk_in');
+  const [leewayRequestStatus, setLeewayRequestStatus] = useState<'not_requested' | 'pending' | 'approved' | 'rejected' | null>(null);
+  const [leewayRequestedItems, setLeewayRequestedItems] = useState<any[]>([]);
+  const [isRequestingLeeway, setIsRequestingLeeway] = useState(false);
+
+  const isLeewayEligible = items.length > 0 && items.every(item => (item as any).leeway_enabled);
+  const minDownPayment = items.reduce((sum, item) => sum + ((item as any).leeway_down_payment_required ? Number((item as any).leeway_down_payment_amount || 0) * item.quantity : 0), 0);
+
+  useEffect(() => {
+    if (isLeewayEligible) {
+      setLeewayDownPayment(minDownPayment);
+    }
+  }, [isLeewayEligible, minDownPayment]);
+
+  // Load leeway request status
+  useEffect(() => {
+    if (user && tenantId) {
+      supabase
+        .from('leeway_requests')
+        .select('status, requested_items')
+        .eq('tenant_id', tenantId)
+        .eq('customer_id', user.id)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) {
+            setLeewayRequestStatus(data.status);
+            setLeewayRequestedItems(data.requested_items || []);
+          } else {
+            setLeewayRequestStatus('not_requested');
+            setLeewayRequestedItems([]);
+          }
+        });
+    } else {
+      setLeewayRequestStatus(null);
+      setLeewayRequestedItems([]);
+    }
+  }, [user, tenantId]);
+
+  const handleRequestLeeway = async () => {
+    if (!user || !tenantId) return;
+    setIsRequestingLeeway(true);
+    try {
+      const requestedItemsPayload = items.map(item => ({
+        id: item.id,
+        title: item.title,
+        price: item.price,
+        quantity: item.quantity,
+        size: item.selectedSize || null
+      }));
+
+      const { error } = await supabase
+        .from('leeway_requests')
+        .insert({
+          tenant_id: tenantId,
+          customer_id: user.id,
+          status: 'pending',
+          requested_items: requestedItemsPayload
+        });
+
+      if (error) throw error;
+      setLeewayRequestStatus('pending');
+      showSuccess('Leeway pre-approval request submitted successfully!');
+    } catch (err: any) {
+      console.error(err);
+      showError('Failed to submit leeway request: ' + (err.message || err));
+    } finally {
+      setIsRequestingLeeway(false);
+    }
+  };
 
   // Prefill details if user changes
   useEffect(() => {
@@ -251,8 +411,9 @@ export function CheckoutPage() {
   const finalCity = province === 'Other' ? customCity : city;
   const finalBarangay = province === 'Other' ? customBarangay : barangay;
 
-  // Selected Payment Method Object
+  // Selected Payment Method Objects
   const selectedPaymentMethod = paymentMethods.find(m => m.id === selectedMethodId);
+  const selectedDownPaymentMethod = paymentMethods.find(m => m.id === leewayPaymentMethodId);
 
   // Validate fields for Step 1
   const isStep1Valid = () => {
@@ -264,6 +425,16 @@ export function CheckoutPage() {
 
   // Validate fields for Step 3
   const isStep3Valid = () => {
+    if (selectedMethodId === 'leeway') {
+      if (!user || leewayRequestStatus !== 'approved') return false;
+      if (leewayDownPayment < minDownPayment || leewayDownPayment > cartTotal) return false;
+      if (leewayDownPayment > 0) {
+        if (leewayPaymentMethodId !== 'walk_in' && selectedDownPaymentMethod && (selectedDownPaymentMethod.type === 'qr' || selectedDownPaymentMethod.type === 'bank_transfer')) {
+          return !!proofOfPaymentUrl;
+        }
+      }
+      return true;
+    }
     if (selectedMethodId === 'walk_in') return true;
     if (selectedPaymentMethod?.type === 'cod') return true;
     return true;
@@ -275,9 +446,31 @@ export function CheckoutPage() {
     setIsPlacing(true);
 
     try {
+      // 0. Atomically deduct stock (final safety net against race conditions)
+      const stockItems = items.map(i => ({
+        item_id: i.id,
+        size: i.selectedSize || null,
+        quantity: i.quantity
+      }));
+      const { data: stockResult, error: stockError } = await supabase.rpc('confirm_and_deduct_stock', {
+        p_tenant_id: tenantId,
+        p_session_id: sessionId,
+        p_items: stockItems
+      });
+      if (stockError) throw stockError;
+      if (stockResult && !stockResult.success) {
+        showError(stockResult.error || 'Some items are no longer available. Please review your cart.');
+        setIsPlacing(false);
+        return;
+      }
+      // Clear timer since stock is now committed
+      if (timerRef.current) clearInterval(timerRef.current);
+      setReservationExpiresAt(null);
+
       // 1. Generate Tracking Code: TRK-[Timestamp]-[Random]
       const randStr = Math.random().toString(36).substring(2, 6).toUpperCase();
       const code = `TRK-${Date.now().toString().slice(-6)}-${randStr}`;
+
 
       const orderPayload = {
         tenant_id: tenantId,
@@ -294,8 +487,12 @@ export function CheckoutPage() {
         shipping_street: streetAddress.trim(),
         shipping_landmark: landmark.trim() || null,
         delivery_method: deliveryMethod,
-        payment_method_id: selectedMethodId === 'walk_in' ? null : selectedMethodId,
-        payment_method_type: selectedMethodId === 'walk_in' ? 'walk_in' : (selectedPaymentMethod?.type || 'custom'),
+        payment_method_id: selectedMethodId === 'leeway'
+          ? (leewayPaymentMethodId === 'walk_in' ? null : leewayPaymentMethodId)
+          : (selectedMethodId === 'walk_in' ? null : selectedMethodId),
+        payment_method_type: selectedMethodId === 'leeway'
+          ? 'leeway'
+          : (selectedMethodId === 'walk_in' ? 'walk_in' : (selectedPaymentMethod?.type || 'custom')),
         proof_of_payment_url: proofOfPaymentUrl || null,
         subtotal: cartTotal,
         shipping_fee: 0,
@@ -314,6 +511,45 @@ export function CheckoutPage() {
         .single();
 
       if (orderError) throw orderError;
+
+      // 2.5 Insert Leeway record if checkout via leeway
+      if (selectedMethodId === 'leeway') {
+        const leewayPayload = {
+          tenant_id: tenantId,
+          customer_id: user!.id,
+          order_id: orderData.id,
+          total_amount: orderData.total,
+          down_payment_amount: leewayDownPayment,
+          remaining_balance: orderData.total,
+          payment_schedule: leewaySchedule,
+          status: 'active'
+        };
+
+        const { data: leewayAcc, error: leewayAccError } = await supabase
+          .from('leeway_accounts')
+          .insert(leewayPayload)
+          .select()
+          .single();
+
+        if (leewayAccError) throw leewayAccError;
+
+        if (leewayDownPayment > 0) {
+          const leewayPaymentPayload = {
+            tenant_id: tenantId,
+            leeway_account_id: leewayAcc.id,
+            amount: leewayDownPayment,
+            proof_of_payment_url: proofOfPaymentUrl || '',
+            status: 'pending_verification',
+            payment_type: 'down_payment'
+          };
+
+          const { error: leewayPayError } = await supabase
+            .from('leeway_payments')
+            .insert(leewayPaymentPayload);
+
+          if (leewayPayError) throw leewayPayError;
+        }
+      }
 
       // Increment promo usage counter if a promo was used
       if (appliedPromo) {
@@ -659,13 +895,13 @@ export function CheckoutPage() {
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <button type="button" onClick={() => { setStep(3); setDeliveryMethod('standard'); }} className={`border rounded-2xl p-6 text-left transition-all ${deliveryMethod === 'standard' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light hover:border-brand-navy'}`}>
+                  <button type="button" onClick={() => handleReserveAndAdvance('standard')} disabled={isReserving} className={`border rounded-2xl p-6 text-left transition-all disabled:opacity-60 ${deliveryMethod === 'standard' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light hover:border-brand-navy'}`}>
                     <span className="font-bold text-sm text-typography-primary block">Standard Delivery</span>
                     <span className="text-xs text-typography-muted block mt-1">Shipped straight to your doorstep.</span>
                     <span className="text-xs font-semibold text-brand-pink block mt-4 uppercase">Free Shipping</span>
                   </button>
 
-                  <button type="button" onClick={() => { setStep(3); setDeliveryMethod('pickup'); }} className={`border rounded-2xl p-6 text-left transition-all ${deliveryMethod === 'pickup' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light hover:border-brand-navy'}`}>
+                  <button type="button" onClick={() => handleReserveAndAdvance('pickup')} disabled={isReserving} className={`border rounded-2xl p-6 text-left transition-all disabled:opacity-60 ${deliveryMethod === 'pickup' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light hover:border-brand-navy'}`}>
                     <span className="font-bold text-sm text-typography-primary block">Store Pick-up</span>
                     <span className="text-xs text-typography-muted block mt-1">Pick up directly at our physical branch.</span>
                     <span className="text-xs font-semibold text-[#fb7a90] block mt-4 uppercase">Ready in 24 Hours</span>
@@ -673,10 +909,12 @@ export function CheckoutPage() {
                 </div>
 
                 <div className="flex justify-between items-center pt-6 border-t border-surface-light">
-                  <button type="button" onClick={() => setStep(1)} className="text-xs font-semibold uppercase tracking-wider text-typography-muted hover:text-brand-navy">Back</button>
-                  <button type="button" onClick={() => setStep(3)} className="flex items-center gap-2 bg-brand-navy hover:bg-brand-pink text-white rounded-xl px-6 py-3 font-semibold text-xs uppercase tracking-widest transition-all">
-                    Next Step <ChevronRight className="w-4 h-4" />
-                  </button>
+                  <button type="button" onClick={() => setStep(1)} disabled={isReserving} className="text-xs font-semibold uppercase tracking-wider text-typography-muted hover:text-brand-navy disabled:opacity-50">Back</button>
+                  {isReserving && (
+                    <span className="flex items-center gap-2 text-xs text-typography-muted">
+                      <Loader2 className="w-4 h-4 animate-spin" /> Checking availability...
+                    </span>
+                  )}
                 </div>
               </div>
             )}
@@ -684,6 +922,29 @@ export function CheckoutPage() {
             {/* STEP 3: PAYMENT METHOD */}
             {step === 3 && (
               <div className="space-y-6">
+
+                {/* Reservation Timer Banner */}
+                {reservationExpiresAt && (
+                  <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 border transition-colors ${
+                    reservationSecsLeft <= 60
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
+                      : 'bg-brand-navy/10 border-brand-navy/20 text-brand-navy'
+                  }`}>
+                    <Clock className="w-4 h-4 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold">
+                        Items reserved for <span className="font-mono">{formatSecsLeft(reservationSecsLeft)}</span>
+                      </p>
+                      <p className="text-[10px] opacity-70">Complete your order before the reservation expires</p>
+                    </div>
+                    {!user && (
+                      <div className="flex items-center gap-1 text-[10px] opacity-70 border-l border-current/20 pl-3 shrink-0">
+                        <AlertTriangle className="w-3 h-3" /> Guest — don't close this tab
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <h2 className="text-xl font-serif text-typography-primary flex items-center gap-2">
                     <CreditCard className="w-5 h-5 text-brand-pink" strokeWidth={1.5} /> Choose Payment Method
@@ -694,7 +955,7 @@ export function CheckoutPage() {
                 <div className="space-y-3">
                   {/* Default Walk In */}
                   <label className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selectedMethodId === 'walk_in' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
-                    <input type="radio" name="paymentMethod" checked={selectedMethodId === 'walk_in'} onChange={() => setSelectedMethodId('walk_in')} className="mt-1" />
+                    <input type="radio" name="paymentMethod" checked={selectedMethodId === 'walk_in'} onChange={() => { setSelectedMethodId('walk_in'); setProofOfPaymentUrl(''); }} className="mt-1" />
                     <div>
                       <span className="font-bold text-sm text-typography-primary block">Walk in (Cash on Pick-up / Cash on Delivery)</span>
                       <span className="text-xs text-typography-muted">Pay with cash upon acquiring the item.</span>
@@ -703,7 +964,7 @@ export function CheckoutPage() {
 
                   {paymentMethods.map(method => (
                     <label key={method.id} className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selectedMethodId === method.id ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
-                      <input type="radio" name="paymentMethod" checked={selectedMethodId === method.id} onChange={() => setSelectedMethodId(method.id)} className="mt-1" />
+                      <input type="radio" name="paymentMethod" checked={selectedMethodId === method.id} onChange={() => { setSelectedMethodId(method.id); setProofOfPaymentUrl(''); }} className="mt-1" />
                       <div className="flex-1">
                         <span className="font-bold text-sm text-typography-primary block uppercase">{method.name} ({method.type.replace('_', ' ')})</span>
                         {method.instructions && <p className="text-xs text-typography-muted mt-1">{method.instructions}</p>}
@@ -712,10 +973,186 @@ export function CheckoutPage() {
                       </div>
                     </label>
                   ))}
+
+                  {/* Leeway Checkout Option */}
+                  {isLeewayEligible && (
+                    <label className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selectedMethodId === 'leeway' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
+                      <input type="radio" name="paymentMethod" checked={selectedMethodId === 'leeway'} onChange={() => { setSelectedMethodId('leeway'); setProofOfPaymentUrl(''); }} className="mt-1" />
+                      <div className="flex-1">
+                        <span className="font-bold text-sm text-typography-primary block">Leeway Installment Plan</span>
+                        <span className="text-xs text-typography-muted">Acquire items now with a downpayment, then pay the remaining balance in installments.</span>
+                        {!user && (
+                          <p className="text-[10px] text-amber-500 font-bold mt-1">⚠️ Account login required for Leeway checkout.</p>
+                        )}
+                      </div>
+                    </label>
+                  )}
                 </div>
 
-                {/* Direct QR display and upload receipts */}
-                {selectedMethodId !== 'walk_in' && selectedPaymentMethod && (selectedPaymentMethod.type === 'qr' || selectedPaymentMethod.type === 'bank_transfer') && (
+                {/* Leeway Customization Forms */}
+                {selectedMethodId === 'leeway' && (
+                  <div className="border border-surface-light bg-surface-offWhite p-6 rounded-2xl space-y-6">
+                    <h3 className="text-xs uppercase tracking-widest font-bold text-typography-primary border-b border-surface-light pb-2">Leeway Pre-Approval Check</h3>
+                    
+                    {!user ? (
+                      <div className="space-y-4">
+                        <p className="text-xs text-amber-500 font-bold">You are currently checking out as a Guest. Leeway is only available to logged-in users so they can track outstanding balances and submit payments in their profile dashboards.</p>
+                        <button
+                          type="button"
+                          onClick={() => { setCheckoutMode('auth'); setAuthTab('login'); }}
+                          className="bg-brand-navy hover:bg-brand-pink text-white rounded-xl px-6 py-2.5 text-xs font-bold uppercase tracking-wider transition-all"
+                        >
+                          Sign In / Register
+                        </button>
+                      </div>
+                    ) : leewayRequestStatus === 'not_requested' ? (
+                      <div className="space-y-4">
+                        <p className="text-xs text-typography-muted">To avail the leeway payment option, you must first submit a request for administrator approval. This helps us ensure limits are safe for your account.</p>
+                        <button
+                          type="button"
+                          onClick={handleRequestLeeway}
+                          disabled={isRequestingLeeway}
+                          className="bg-brand-navy hover:bg-brand-pink text-white rounded-xl px-6 py-3 text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 flex items-center gap-2"
+                        >
+                          {isRequestingLeeway && <Loader2 className="w-4 h-4 animate-spin" />}
+                          Request Leeway Access
+                        </button>
+                      </div>
+                    ) : leewayRequestStatus === 'pending' ? (
+                      <div className="bg-amber-50 border border-amber-200/50 p-5 rounded-2xl text-xs space-y-4">
+                        <div>
+                          <strong className="block text-amber-600 uppercase tracking-wide text-[10px]">Access Review Pending</strong>
+                          <p className="text-typography-muted leading-relaxed mt-1">
+                            Your request to purchase using Leeway installments has been submitted and is currently pending review by our store administrators. We will unlock leeway checkout for your account once approved.
+                          </p>
+                        </div>
+                        {leewayRequestedItems.length > 0 && (
+                          <div className="border-t border-amber-200/30 pt-3">
+                            <span className="text-[9px] font-bold text-amber-600 uppercase block mb-2">Requested Items:</span>
+                            <div className="space-y-2">
+                              {leewayRequestedItems.map((item: any, idx: number) => (
+                                <div key={idx} className="flex justify-between items-center text-[11px] text-typography-muted">
+                                  <span>{item.title} {item.size ? `(${item.size})` : ''} <strong className="text-typography-primary">x{item.quantity}</strong></span>
+                                  <span className="font-semibold">{currencySymbol}{(item.price * item.quantity).toLocaleString()}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : leewayRequestStatus === 'rejected' ? (
+                      <div className="bg-red-50 border border-red-200/50 p-5 rounded-2xl text-xs space-y-4">
+                        <div>
+                          <strong className="block text-red-500 uppercase tracking-wide text-[10px]">Access Request Declined</strong>
+                          <p className="text-typography-muted leading-relaxed mt-1">
+                            Your request for leeway installments was declined by the administrator. Please choose an alternative payment option to complete your checkout.
+                          </p>
+                        </div>
+                        {leewayRequestedItems.length > 0 && (
+                          <div className="border-t border-red-200/30 pt-3">
+                            <span className="text-[9px] font-bold text-red-500 uppercase block mb-2">Requested Items:</span>
+                            <div className="space-y-2">
+                              {leewayRequestedItems.map((item: any, idx: number) => (
+                                <div key={idx} className="flex justify-between items-center text-[11px] text-typography-muted">
+                                  <span>{item.title} {item.size ? `(${item.size})` : ''} <strong className="text-typography-primary">x{item.quantity}</strong></span>
+                                  <span className="font-semibold">{currencySymbol}{(item.price * item.quantity).toLocaleString()}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="space-y-5">
+                        <div className="bg-emerald-50 border border-emerald-200 text-emerald-600 p-4 rounded-xl text-xs font-semibold">
+                          ✓ Your leeway plan pre-approval is Approved! You can now customize your installment details below.
+                        </div>
+                        {/* 1. Installment schedule */}
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold uppercase text-typography-primary">Select Installment Schedule *</label>
+                          <select
+                            value={leewaySchedule}
+                            onChange={e => setLeewaySchedule(e.target.value as any)}
+                            className="bg-white border border-surface-light rounded-xl px-4 py-2.5 text-sm text-typography-primary outline-none focus:border-brand-pink"
+                          >
+                            <option value="weekly">Pay Weekly</option>
+                            <option value="monthly">Pay Monthly</option>
+                            <option value="flexible">Flexible (Depends on Customer)</option>
+                          </select>
+                        </div>
+
+                        {/* 2. Downpayment amount */}
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[10px] font-bold uppercase text-typography-primary">Down Payment Amount (PHP) *</label>
+                          <input
+                            type="number"
+                            value={leewayDownPayment || ''}
+                            onChange={e => setLeewayDownPayment(Math.max(0, Number(e.target.value)))}
+                            min={minDownPayment}
+                            max={cartTotal}
+                            placeholder={`Min downpayment: ${minDownPayment}`}
+                            className="bg-white border border-surface-light rounded-xl px-4 py-2.5 text-sm text-typography-primary outline-none focus:border-brand-pink"
+                          />
+                          <p className="text-[10px] text-typography-muted italic">Minimum required: {currencySymbol}{minDownPayment.toLocaleString()} — Max: {currencySymbol}{cartTotal.toLocaleString()}</p>
+                        </div>
+
+                        {/* 3. Downpayment routing */}
+                        {leewayDownPayment > 0 && (
+                          <div className="space-y-4 pt-3 border-t border-surface-light">
+                            <label className="text-[10px] font-bold uppercase text-typography-primary block">Select Down Payment Route</label>
+                            
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                              <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer text-xs ${leewayPaymentMethodId === 'walk_in' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
+                                <input type="radio" checked={leewayPaymentMethodId === 'walk_in'} onChange={() => { setLeewayPaymentMethodId('walk_in'); setProofOfPaymentUrl(''); }} />
+                                <div>
+                                  <strong className="block">Cash / Walk-in</strong>
+                                  <span className="text-typography-muted">Pay downpayment directly in store.</span>
+                                </div>
+                              </label>
+
+                              {paymentMethods.map(m => (
+                                <label key={m.id} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer text-xs ${leewayPaymentMethodId === m.id ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
+                                  <input type="radio" checked={leewayPaymentMethodId === m.id} onChange={() => { setLeewayPaymentMethodId(m.id); setProofOfPaymentUrl(''); }} />
+                                  <div className="flex-1 min-w-0">
+                                    <strong className="block uppercase truncate">{m.name} ({m.type.replace('_', ' ')})</strong>
+                                    {m.account_number && <span className="text-typography-muted text-[10px] truncate block">{m.account_number}</span>}
+                                  </div>
+                                </label>
+                              ))}
+                            </div>
+
+                            {/* Downpayment receipt upload */}
+                            {leewayPaymentMethodId !== 'walk_in' && selectedDownPaymentMethod && (selectedDownPaymentMethod.type === 'qr' || selectedDownPaymentMethod.type === 'bank_transfer') && (
+                              <div className="bg-white border border-surface-light p-4 rounded-xl space-y-4 mt-3">
+                                <span className="text-[10px] uppercase font-bold text-typography-primary block border-b border-surface-light pb-1">Digital Transfer Details</span>
+                                {selectedDownPaymentMethod.qr_code_url && (
+                                  <div className="flex flex-col items-center gap-3">
+                                    <div className="w-40 h-40 border border-surface-light p-1 rounded-xl">
+                                      <img src={selectedDownPaymentMethod.qr_code_url} alt="QR Code" className="w-full h-full object-contain" />
+                                    </div>
+                                    <a href={selectedDownPaymentMethod.qr_code_url} target="_blank" rel="noreferrer" download className="text-[10px] text-brand-pink font-semibold hover:underline">Download QR</a>
+                                  </div>
+                                )}
+                                <div className="space-y-1.5">
+                                  <label className="text-[10px] font-bold uppercase text-typography-primary block">Upload Down Payment Receipt *</label>
+                                  <ImageUploadInput
+                                    value={proofOfPaymentUrl}
+                                    onChange={setProofOfPaymentUrl}
+                                    tenantId={tenantId}
+                                    placeholder="Select receipt file..."
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Direct QR display and upload receipts for normal orders */}
+                {selectedMethodId !== 'walk_in' && selectedMethodId !== 'leeway' && selectedPaymentMethod && (selectedPaymentMethod.type === 'qr' || selectedPaymentMethod.type === 'bank_transfer') && (
                   <div className="border border-surface-light bg-surface-offWhite p-6 rounded-2xl space-y-6">
                     <h3 className="text-xs uppercase tracking-widest font-bold text-typography-primary border-b border-surface-light pb-2">Digital Transfer Details</h3>
                     
@@ -751,7 +1188,7 @@ export function CheckoutPage() {
 
                 <div className="flex justify-between items-center pt-6 border-t border-surface-light">
                   <button type="button" onClick={() => setStep(2)} className="text-xs font-semibold uppercase tracking-wider text-typography-muted hover:text-brand-navy">Back</button>
-                  <button type="button" onClick={() => setStep(4)} className="flex items-center gap-2 bg-brand-navy hover:bg-brand-pink text-white rounded-xl px-6 py-3 font-semibold text-xs uppercase tracking-widest transition-all">
+                  <button type="button" onClick={() => isStep3Valid() && setStep(4)} disabled={!isStep3Valid()} className="flex items-center gap-2 bg-brand-navy hover:bg-brand-pink text-white rounded-xl px-6 py-3 font-semibold text-xs uppercase tracking-widest transition-all disabled:opacity-50">
                     Next Step <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -761,6 +1198,29 @@ export function CheckoutPage() {
             {/* STEP 4: ORDER REVIEW */}
             {step === 4 && (
               <div className="space-y-6">
+
+                {/* Reservation Timer Banner */}
+                {reservationExpiresAt && (
+                  <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 border transition-colors ${
+                    reservationSecsLeft <= 60
+                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
+                      : 'bg-brand-navy/10 border-brand-navy/20 text-brand-navy'
+                  }`}>
+                    <Clock className="w-4 h-4 flex-shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-bold">
+                        Items reserved for <span className="font-mono">{formatSecsLeft(reservationSecsLeft)}</span>
+                      </p>
+                      <p className="text-[10px] opacity-70">Complete your order before the reservation expires</p>
+                    </div>
+                    {!user && (
+                      <div className="flex items-center gap-1 text-[10px] opacity-70 border-l border-current/20 pl-3 shrink-0">
+                        <AlertTriangle className="w-3 h-3" /> Guest — don't close this tab
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 <div>
                   <h2 className="text-xl font-serif text-typography-primary flex items-center gap-2">
                     <Check className="w-5 h-5 text-brand-pink" strokeWidth={1.5} /> Review and Place Order

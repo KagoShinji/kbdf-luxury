@@ -26,6 +26,7 @@ import { ExpensesPage } from "./features/admin/pages/ExpensesPage";
 import { PaymentMethodsPage } from "./features/admin/pages/PaymentMethodsPage";
 import { SettingsPage } from "./features/admin/pages/SettingsPage";
 import { PromoCodesPage } from "./features/admin/pages/PromoCodesPage";
+import { AdminLeewayPage } from "./features/admin/pages/AdminLeewayPage";
 
 // Superadmin Imports
 import { SuperAdminGuard } from "./features/superadmin/SuperAdminGuard";
@@ -92,6 +93,7 @@ function App() {
                     <Route path="expenses" element={<ExpensesPage />} />
                     <Route path="payment-methods" element={<PaymentMethodsPage />} />
                     <Route path="promo-codes" element={<PromoCodesPage />} />
+                    <Route path="leeway" element={<AdminLeewayPage />} />
                     <Route path="settings" element={<SettingsPage />} />
                   </Routes>
                 </AdminLayout>

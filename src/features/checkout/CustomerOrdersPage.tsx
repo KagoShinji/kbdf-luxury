@@ -3,7 +3,10 @@ import { useUserAuth } from "../../core/context/UserAuthContext";
 import { useTenant } from "../../core/context/TenantContext";
 import { useNotification } from "../../core/context/NotificationContext";
 import { supabase } from "../../lib/supabase/supabaseClient";
-import { Check, Calendar, ShoppingBag, MapPin, CreditCard, ChevronDown, ChevronUp, AlertCircle, Loader2 } from "lucide-react";
+import { 
+  Check, Calendar, ShoppingBag, MapPin, CreditCard, ChevronDown, 
+  ChevronUp, AlertCircle, Loader2, Coins, ArrowUpRight, Upload, X 
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { ImageUploadInput } from "../admin/components/ImageUploadInput";
 
@@ -39,15 +42,66 @@ interface Order {
   order_items: OrderItem[];
 }
 
+interface LeewayAccount {
+  id: string;
+  tenant_id: string;
+  customer_id: string;
+  order_id: string;
+  total_amount: number;
+  down_payment_amount: number;
+  remaining_balance: number;
+  payment_schedule: 'weekly' | 'monthly' | 'flexible';
+  status: 'active' | 'completed' | 'defaulted';
+  created_at: string;
+  order?: {
+    tracking_number: string;
+    order_items: { title: string }[];
+  } | null;
+}
+
+interface LeewayPayment {
+  id: string;
+  tenant_id: string;
+  leeway_account_id: string;
+  amount: number;
+  proof_of_payment_url: string;
+  status: 'pending_verification' | 'verified' | 'rejected';
+  payment_type: 'down_payment' | 'installment';
+  admin_notes: string | null;
+  created_at: string;
+  leeway_account?: {
+    order?: {
+      tracking_number: string;
+    } | null;
+  } | null;
+}
+
 export function CustomerOrdersPage() {
   const { user, isLoading: authLoading } = useUserAuth();
   const { tenant } = useTenant();
   const { showSuccess, showError } = useNotification();
 
+  const [activeTab, setActiveTab] = useState<'orders' | 'leeway'>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [receiptUrlMap, setReceiptUrlMap] = useState<{ [orderId: string]: string }>({});
+
+  // Leeway states
+  const [leewayAccounts, setLeewayAccounts] = useState<LeewayAccount[]>([]);
+  const [leewayPayments, setLeewayPayments] = useState<LeewayPayment[]>([]);
+  const [loadingLeeway, setLoadingLeeway] = useState(true);
+  const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
+  const [leewayRequestStatus, setLeewayRequestStatus] = useState<'not_requested' | 'pending' | 'approved' | 'rejected' | null>(null);
+  const [leewayRequestedItems, setLeewayRequestedItems] = useState<any[]>([]);
+  const [isRequestingLeeway, setIsRequestingLeeway] = useState(false);
+
+  // Leeway payment submission modal states
+  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
+  const [selectedAccountId, setSelectedAccountId] = useState("");
+  const [paymentAmount, setPaymentAmount] = useState<number>(0);
+  const [submitReceiptUrl, setSubmitReceiptUrl] = useState("");
+  const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
 
   const currencySymbol = tenant?.currency_symbol || '₱';
 
@@ -56,6 +110,27 @@ export function CustomerOrdersPage() {
       loadCustomerOrders();
     }
   }, [user]);
+
+  useEffect(() => {
+    if (user && tenant?.id) {
+      loadCustomerLeewayData();
+    }
+  }, [user, tenant?.id]);
+
+  // Load payment methods for downpayment/installment instructions
+  useEffect(() => {
+    if (tenant?.id) {
+      supabase
+        .from("payment_methods")
+        .select("*")
+        .eq("tenant_id", tenant.id)
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true })
+        .then(({ data }) => {
+          if (data) setPaymentMethods(data);
+        });
+    }
+  }, [tenant]);
 
   const loadCustomerOrders = async () => {
     setLoadingOrders(true);
@@ -82,6 +157,78 @@ export function CustomerOrdersPage() {
     }
   };
 
+  const loadCustomerLeewayData = async () => {
+    if (!tenant?.id) return;
+    setLoadingLeeway(true);
+    try {
+      
+      const { data: requestData } = await supabase
+        .from("leeway_requests")
+        .select("status, requested_items")
+        .eq("tenant_id", tenant.id)
+        .eq("customer_id", user!.id)
+        .maybeSingle();
+
+      if (requestData) {
+        setLeewayRequestStatus(requestData.status as any);
+        setLeewayRequestedItems(requestData.requested_items || []);
+      } else {
+        setLeewayRequestStatus('not_requested');
+        setLeewayRequestedItems([]);
+      }
+
+      const { data: accountsData, error: accError } = await supabase
+        .from("leeway_accounts")
+        .select("*, order:orders(tracking_number, order_items(title))")
+        .eq("customer_id", user!.id)
+        .order("created_at", { ascending: false });
+
+      if (accError) throw accError;
+      setLeewayAccounts(accountsData || []);
+
+      if (accountsData && accountsData.length > 0) {
+        const accIds = accountsData.map(a => a.id);
+        const { data: paymentsData, error: payError } = await supabase
+          .from("leeway_payments")
+          .select("*, leeway_account:leeway_accounts(order:orders(tracking_number))")
+          .in("leeway_account_id", accIds)
+          .order("created_at", { ascending: false });
+
+        if (payError) throw payError;
+        setLeewayPayments(paymentsData || []);
+      } else {
+        setLeewayPayments([]);
+      }
+    } catch (err) {
+      console.error("Error loading customer leeway data:", err);
+    } finally {
+      setLoadingLeeway(false);
+    }
+  };
+
+  const handleRequestLeeway = async () => {
+    if (!user || !tenant?.id) return;
+    setIsRequestingLeeway(true);
+    try {
+      const { error } = await supabase
+        .from("leeway_requests")
+        .insert({
+          tenant_id: tenant.id,
+          customer_id: user.id,
+          status: 'pending'
+        });
+
+      if (error) throw error;
+      setLeewayRequestStatus('pending');
+      showSuccess("Leeway pre-approval request submitted successfully!");
+    } catch (err: any) {
+      console.error(err);
+      showError("Failed to submit leeway request: " + (err.message || err));
+    } finally {
+      setIsRequestingLeeway(false);
+    }
+  };
+
   const handleUpdateReceipt = async (orderId: string) => {
     const newUrl = receiptUrlMap[orderId];
     try {
@@ -96,6 +243,51 @@ export function CustomerOrdersPage() {
       showSuccess("Payment receipt uploaded successfully!");
     } catch (err: any) {
       showError("Failed to update receipt: " + (err.message || err));
+    }
+  };
+
+  const handleSubmitLeewayPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedAccountId) {
+      showError("Please select a leeway plan.");
+      return;
+    }
+    if (paymentAmount <= 0) {
+      showError("Amount must be greater than 0.");
+      return;
+    }
+    if (!submitReceiptUrl) {
+      showError("Please upload a proof of payment receipt.");
+      return;
+    }
+
+    setIsSubmittingPayment(true);
+    try {
+      const payload = {
+        tenant_id: tenant!.id,
+        leeway_account_id: selectedAccountId,
+        amount: Number(paymentAmount),
+        proof_of_payment_url: submitReceiptUrl,
+        status: 'pending_verification',
+        payment_type: 'installment',
+      };
+
+      const { error } = await supabase
+        .from("leeway_payments")
+        .insert(payload);
+
+      if (error) throw error;
+
+      showSuccess("Installment payment submitted successfully! Awaiting verification.");
+      setPaymentAmount(0);
+      setSubmitReceiptUrl("");
+      setIsSubmitModalOpen(false);
+      loadCustomerLeewayData();
+    } catch (err: any) {
+      console.error(err);
+      showError("Failed to submit leeway payment: " + (err.message || err));
+    } finally {
+      setIsSubmittingPayment(false);
     }
   };
 
@@ -136,6 +328,11 @@ export function CustomerOrdersPage() {
     }
   };
 
+  // Outstanding balance calculation
+  const totalOutstandingBalance = leewayAccounts
+    .filter(a => a.status === 'active')
+    .reduce((sum, curr) => sum + Number(curr.remaining_balance), 0);
+
   if (authLoading) {
     return (
       <div className="pt-32 pb-24 min-h-screen bg-surface-white flex items-center justify-center">
@@ -149,7 +346,7 @@ export function CustomerOrdersPage() {
       <div className="pt-32 pb-24 min-h-screen bg-surface-white flex flex-col items-center justify-center text-center px-4">
         <AlertCircle className="w-12 h-12 text-brand-pink mb-4" strokeWidth={1} />
         <h2 className="text-xl font-serif text-typography-primary mb-2">Access Denied</h2>
-        <p className="text-xs text-typography-muted mb-6 uppercase tracking-wider">Please sign in to view your order history.</p>
+        <p className="text-xs text-typography-muted mb-6 uppercase tracking-wider">Please sign in to view your account dashboard.</p>
         <Link to="/auth" className="bg-brand-navy hover:bg-brand-pink text-white px-8 py-3 text-[10px] uppercase tracking-widest font-bold transition-all">Go to Sign In</Link>
       </div>
     );
@@ -159,188 +356,581 @@ export function CustomerOrdersPage() {
     <div className="pt-32 pb-24 min-h-screen bg-surface-white">
       <div className="max-w-4xl mx-auto px-4">
         
-        {/* Header */}
-        <div className="mb-10">
-          <h1 className="text-2xl font-sans font-light tracking-widest uppercase text-typography-primary">
-            Order History
-          </h1>
-          <div className="w-12 h-px bg-typography-primary mt-4 mb-2"></div>
-          <p className="text-xs text-typography-muted uppercase tracking-wider">View and track all orders associated with your profile</p>
+        {/* Header and Tab Toggles */}
+        <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-surface-light pb-6 mb-8 gap-4">
+          <div>
+            <h1 className="text-2xl font-sans font-light tracking-widest uppercase text-typography-primary">
+              Account Dashboard
+            </h1>
+            <div className="w-12 h-px bg-typography-primary mt-4 mb-2"></div>
+            <p className="text-xs text-typography-muted uppercase tracking-wider">Manage your purchase records and active leeway schedules</p>
+          </div>
+
+          <div className="flex gap-2 self-start md:self-auto bg-surface-offWhite p-1 border border-surface-light rounded-2xl">
+            <button
+              onClick={() => setActiveTab('orders')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'orders' ? 'bg-brand-navy text-white shadow-md' : 'text-typography-muted hover:text-typography-primary'
+              }`}
+            >
+              <ShoppingBag className="w-4 h-4" /> Order History
+            </button>
+            <button
+              onClick={() => setActiveTab('leeway')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'leeway' ? 'bg-brand-navy text-white shadow-md' : 'text-typography-muted hover:text-typography-primary'
+              }`}
+            >
+              <Coins className="w-4 h-4" /> Leeway Installments
+            </button>
+          </div>
         </div>
 
-        {loadingOrders ? (
-          <div className="space-y-4">
-            {[1, 2].map(i => (
-              <div key={i} className="h-24 bg-surface-offWhite border border-surface-light rounded-2xl animate-pulse" />
-            ))}
-          </div>
-        ) : orders.length === 0 ? (
-          <div className="border border-surface-light bg-surface-offWhite rounded-3xl p-12 text-center">
-            <ShoppingBag className="w-12 h-12 text-typography-muted/40 mx-auto mb-4" strokeWidth={1} />
-            <h3 className="text-lg font-serif text-typography-primary">No Orders Placed Yet</h3>
-            <p className="text-xs text-typography-muted mt-1 uppercase tracking-wider mb-6">Explore our curated collections to place your first order</p>
-            <Link to="/shop" className="bg-brand-navy hover:bg-brand-pink text-white px-8 py-3.5 text-[10px] uppercase tracking-widest font-bold transition-all">Shop Collections</Link>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {orders.map(order => {
-              const isExpanded = expandedOrderId === order.id;
-              const activeIndex = getStepIndex(order.status);
+        {/* Tab 1: Order History */}
+        {activeTab === 'orders' && (
+          <div>
+            {loadingOrders ? (
+              <div className="space-y-4">
+                {[1, 2].map(i => (
+                  <div key={i} className="h-24 bg-surface-offWhite border border-surface-light rounded-2xl animate-pulse" />
+                ))}
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="border border-surface-light bg-surface-offWhite rounded-3xl p-12 text-center">
+                <ShoppingBag className="w-12 h-12 text-typography-muted/40 mx-auto mb-4" strokeWidth={1} />
+                <h3 className="text-lg font-serif text-typography-primary">No Orders Placed Yet</h3>
+                <p className="text-xs text-typography-muted mt-1 uppercase tracking-wider mb-6">Explore our curated collections to place your first order</p>
+                <Link to="/shop" className="bg-brand-navy hover:bg-brand-pink text-white px-8 py-3.5 text-[10px] uppercase tracking-widest font-bold transition-all">Shop Collections</Link>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {orders.map(order => {
+                  const isExpanded = expandedOrderId === order.id;
+                  const activeIndex = getStepIndex(order.status);
 
-              return (
-                <div key={order.id} className="border border-surface-light rounded-2xl overflow-hidden bg-surface-offWhite transition-all">
-                  
-                  {/* Summary Header Accordion toggle */}
-                  <button 
-                    onClick={() => toggleExpandOrder(order.id)}
-                    className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-5 text-left gap-4 hover:bg-surface-light/40 transition-colors"
-                  >
-                    <div className="space-y-1">
-                      <span className="font-mono text-sm font-bold text-typography-primary tracking-wider">{order.tracking_number}</span>
-                      <div className="flex items-center gap-3 text-xs text-typography-muted">
-                        <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {new Date(order.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
-                        <span>•</span>
-                        <span>{order.order_items.length} {order.order_items.length === 1 ? 'item' : 'items'}</span>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-4 self-end sm:self-auto">
-                      <div className="text-right">
-                        <span className="font-bold text-sm text-typography-primary block">{currencySymbol}{order.total.toLocaleString()}</span>
-                        <span className={`px-2 py-0.5 text-[10px] rounded-full border uppercase font-bold tracking-wider ${getBadgeStyle(order.status)}`}>
-                          {order.status.replace('_', ' ')}
-                        </span>
-                      </div>
-                      {isExpanded ? <ChevronUp className="w-5 h-5 text-typography-muted" /> : <ChevronDown className="w-5 h-5 text-typography-muted" />}
-                    </div>
-                  </button>
-
-                  {/* Expanded details view */}
-                  {isExpanded && (
-                    <div className="border-t border-surface-light p-6 bg-white space-y-8 animate-fadeIn">
+                  return (
+                    <div key={order.id} className="border border-surface-light rounded-2xl overflow-hidden bg-surface-offWhite transition-all">
                       
-                      {/* Timeline steps */}
-                      {order.status === 'cancelled' ? (
-                        <div className="bg-red-50 border border-red-200 text-red-500 rounded-xl p-4 text-center text-xs">
-                          This order was cancelled by the store administrator. Please contact support.
-                        </div>
-                      ) : (
-                        <div className="flex flex-col md:flex-row justify-between items-center relative gap-6 py-2 border-b border-surface-light pb-6">
-                          <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-surface-light -translate-y-1/2 hidden md:block z-0" />
-                          {steps.map((step, idx) => {
-                            const isCompleted = idx <= activeIndex;
-                            const isCurrent = idx === activeIndex;
-
-                            return (
-                              <div key={step.key} className="flex flex-col items-center text-center relative z-10 w-full md:w-auto">
-                                <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
-                                  isCompleted 
-                                    ? 'bg-brand-pink border-brand-pink text-white shadow-md' 
-                                    : 'bg-white border-surface-light text-typography-muted'
-                                }`}>
-                                  {isCompleted ? <Check className="w-3.5 h-3.5" strokeWidth={3} /> : idx + 1}
-                                </div>
-                                <span className={`text-[9px] uppercase font-bold tracking-wider mt-1.5 ${
-                                  isCurrent ? 'text-brand-pink font-extrabold' : 'text-typography-muted'
-                                }`}>
-                                  {step.label}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-
-                      {/* Info grid */}
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-xs text-typography-primary">
-                        
-                        {/* Address */}
-                        <div className="space-y-3">
-                          <h4 className="text-[10px] uppercase font-bold tracking-widest text-typography-muted border-b border-surface-light pb-1 flex items-center gap-1.5">
-                            <MapPin className="w-4 h-4 text-brand-pink" /> Delivery Details
-                          </h4>
-                          <div>
-                            <p className="font-semibold capitalize">{order.delivery_method} Delivery</p>
-                            {order.delivery_method !== 'pickup' && (
-                              <div className="text-typography-muted space-y-0.5 mt-1">
-                                <p>{order.shipping_street}</p>
-                                <p>{order.shipping_barangay}, {order.shipping_city}</p>
-                                <p>{order.shipping_province}</p>
-                                {order.shipping_landmark && <p className="italic text-typography-primary bg-surface-offWhite p-2 rounded mt-1.5">Landmark: {order.shipping_landmark}</p>}
-                              </div>
+                      {/* Accordion toggle header */}
+                      <button 
+                        onClick={() => toggleExpandOrder(order.id)}
+                        className="w-full flex flex-col sm:flex-row sm:items-center justify-between p-5 text-left gap-4 hover:bg-surface-light/40 transition-colors"
+                      >
+                        <div className="space-y-1">
+                          <span className="font-mono text-sm font-bold text-typography-primary tracking-wider">{order.tracking_number}</span>
+                          <div className="flex items-center gap-3 text-xs text-typography-muted">
+                            <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> {new Date(order.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}</span>
+                            <span>•</span>
+                            <span>{order.order_items.length} {order.order_items.length === 1 ? 'item' : 'items'}</span>
+                            {order.payment_method_type === 'leeway' && (
+                              <span className="bg-brand-pink/10 text-brand-pink text-[9px] uppercase font-bold px-1.5 py-0.5 rounded">Leeway</span>
                             )}
                           </div>
                         </div>
 
-                        {/* Payment */}
-                        <div className="space-y-3 flex flex-col justify-between">
-                          <div className="space-y-3">
-                            <h4 className="text-[10px] uppercase font-bold tracking-widest text-typography-muted border-b border-surface-light pb-1 flex items-center gap-1.5">
-                              <CreditCard className="w-4 h-4 text-brand-pink" /> Payment Receipt
-                            </h4>
-                            <p className="font-semibold uppercase">{order.payment_method_type.replace('_', ' ')}</p>
-                            {order.proof_of_payment_url && (
-                              <div className="w-20 h-20 bg-surface-offWhite border border-surface-light rounded overflow-hidden mt-1">
-                                <img src={order.proof_of_payment_url} alt="Proof" className="w-full h-full object-cover" />
-                              </div>
-                            )}
+                        <div className="flex items-center gap-4 self-end sm:self-auto">
+                          <div className="text-right">
+                            <span className="font-bold text-sm text-typography-primary block">{currencySymbol}{order.total.toLocaleString()}</span>
+                            <span className={`px-2 py-0.5 text-[10px] rounded-full border uppercase font-bold tracking-wider ${getBadgeStyle(order.status)}`}>
+                              {order.status.replace('_', ' ')}
+                            </span>
                           </div>
+                          {isExpanded ? <ChevronUp className="w-5 h-5 text-typography-muted" /> : <ChevronDown className="w-5 h-5 text-typography-muted" />}
+                        </div>
+                      </button>
 
-                          {/* Upload receipt trigger if pending */}
-                          {order.status === 'pending_verification' && (
-                            <div className="space-y-2 pt-2">
-                              <label className="text-[9px] font-bold uppercase text-typography-muted block">
-                                {order.proof_of_payment_url ? 'Update Payment Receipt' : 'Upload Payment Receipt'}
-                              </label>
-                              <div className="flex gap-2">
-                                <ImageUploadInput
-                                  value={receiptUrlMap[order.id] || ""}
-                                  onChange={url => setReceiptUrlMap(prev => ({ ...prev, [order.id]: url }))}
-                                  tenantId={order.tenant_id}
-                                  placeholder="Select receipt file..."
-                                />
-                                <button 
-                                  onClick={() => handleUpdateReceipt(order.id)}
-                                  disabled={receiptUrlMap[order.id] === order.proof_of_payment_url}
-                                  className="bg-brand-navy hover:bg-brand-pink text-white rounded-xl px-4 py-2 text-[10px] font-bold uppercase tracking-wider disabled:opacity-50 transition-all whitespace-nowrap self-start"
-                                >
-                                  Save
-                                </button>
-                              </div>
+                      {/* Expanded View */}
+                      {isExpanded && (
+                        <div className="border-t border-surface-light p-6 bg-white space-y-8 animate-fadeIn">
+                          
+                          {order.status === 'cancelled' ? (
+                            <div className="bg-red-50 border border-red-200 text-red-500 rounded-xl p-4 text-center text-xs">
+                              This order was cancelled. Please coordinate with administrators.
+                            </div>
+                          ) : (
+                            <div className="flex flex-col md:flex-row justify-between items-center relative gap-6 py-2 border-b border-surface-light pb-6">
+                              <div className="absolute top-1/2 left-0 right-0 h-0.5 bg-surface-light -translate-y-1/2 hidden md:block z-0" />
+                              {steps.map((step, idx) => {
+                                const isCompleted = idx <= activeIndex;
+                                const isCurrent = idx === activeIndex;
+
+                                return (
+                                  <div key={step.key} className="flex flex-col items-center text-center relative z-10 w-full md:w-auto">
+                                    <div className={`w-7 h-7 rounded-full border-2 flex items-center justify-center transition-all ${
+                                      isCompleted 
+                                        ? 'bg-brand-pink border-brand-pink text-white shadow-md' 
+                                        : 'bg-white border-surface-light text-typography-muted'
+                                    }`}>
+                                      {isCompleted ? <Check className="w-3.5 h-3.5" strokeWidth={3} /> : idx + 1}
+                                    </div>
+                                    <span className={`text-[9px] uppercase font-bold tracking-wider mt-1.5 ${
+                                      isCurrent ? 'text-brand-pink font-extrabold' : 'text-typography-muted'
+                                    }`}>
+                                      {step.label}
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             </div>
                           )}
-                        </div>
 
-                        {/* Ordered Items list */}
-                        <div className="md:col-span-2 space-y-3 pt-2">
-                          <h4 className="text-[10px] uppercase font-bold tracking-widest text-typography-muted border-b border-surface-light pb-1">
-                            Items Purchased
-                          </h4>
-                          <div className="divide-y divide-surface-light">
-                            {order.order_items.map(item => (
-                              <div key={item.id} className="flex justify-between py-2 items-center text-xs">
-                                <div>
-                                  <p className="font-semibold">{item.title}</p>
-                                  <p className="text-typography-muted">Qty: {item.quantity}</p>
-                                </div>
-                                <span className="font-bold">{currencySymbol}{(item.price * item.quantity).toLocaleString()}</span>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-xs text-typography-primary">
+                            
+                            {/* Address details */}
+                            <div className="space-y-3">
+                              <h4 className="text-[10px] uppercase font-bold tracking-widest text-typography-muted border-b border-surface-light pb-1 flex items-center gap-1.5">
+                                <MapPin className="w-4 h-4 text-brand-pink" /> Delivery Details
+                              </h4>
+                              <div>
+                                <p className="font-semibold capitalize">{order.delivery_method} Delivery</p>
+                                {order.delivery_method !== 'pickup' && (
+                                  <div className="text-typography-muted space-y-0.5 mt-1">
+                                    <p>{order.shipping_street}</p>
+                                    <p>{order.shipping_barangay}, {order.shipping_city}</p>
+                                    <p>{order.shipping_province}</p>
+                                    {order.shipping_landmark && <p className="italic text-typography-primary bg-surface-offWhite p-2 rounded mt-1.5">Landmark: {order.shipping_landmark}</p>}
+                                  </div>
+                                )}
                               </div>
-                            ))}
+                            </div>
+
+                            {/* Payment Receipt */}
+                            <div className="space-y-3 flex flex-col justify-between">
+                              <div className="space-y-3">
+                                <h4 className="text-[10px] uppercase font-bold tracking-widest text-typography-muted border-b border-surface-light pb-1 flex items-center gap-1.5">
+                                  <CreditCard className="w-4 h-4 text-brand-pink" /> Payment Route
+                                </h4>
+                                <p className="font-semibold uppercase">{order.payment_method_type.replace('_', ' ')}</p>
+                                {order.proof_of_payment_url && (
+                                  <div className="w-20 h-20 bg-surface-offWhite border border-surface-light rounded overflow-hidden mt-1">
+                                    <img src={order.proof_of_payment_url} alt="Proof" className="w-full h-full object-cover" />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Upload receipt triggers */}
+                              {order.status === 'pending_verification' && (
+                                <div className="space-y-2 pt-2">
+                                  <label className="text-[9px] font-bold uppercase text-typography-muted block">
+                                    {order.proof_of_payment_url ? 'Update payment receipt photo' : 'Upload payment receipt photo'}
+                                  </label>
+                                  <div className="flex gap-2">
+                                    <ImageUploadInput
+                                      value={receiptUrlMap[order.id] || ""}
+                                      onChange={url => setReceiptUrlMap(prev => ({ ...prev, [order.id]: url }))}
+                                      tenantId={order.tenant_id}
+                                      placeholder="Select receipt file..."
+                                    />
+                                    <button 
+                                      onClick={() => handleUpdateReceipt(order.id)}
+                                      disabled={receiptUrlMap[order.id] === order.proof_of_payment_url}
+                                      className="bg-brand-navy hover:bg-brand-pink text-white rounded-xl px-4 py-2 text-[10px] font-bold uppercase tracking-wider disabled:opacity-50 transition-all whitespace-nowrap self-start"
+                                    >
+                                      Save
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Items list */}
+                            <div className="md:col-span-2 space-y-3 pt-2">
+                              <h4 className="text-[10px] uppercase font-bold tracking-widest text-typography-muted border-b border-surface-light pb-1">
+                                Items Purchased
+                              </h4>
+                              <div className="divide-y divide-surface-light">
+                                {order.order_items.map(item => (
+                                  <div key={item.id} className="flex justify-between py-2 items-center text-xs">
+                                    <div>
+                                      <p className="font-semibold">{item.title}</p>
+                                      <p className="text-typography-muted">Qty: {item.quantity}</p>
+                                    </div>
+                                    <span className="font-bold">{currencySymbol}{(item.price * item.quantity).toLocaleString()}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+
                           </div>
                         </div>
-
-                      </div>
-
+                      )}
                     </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Tab 2: Leeway Installments */}
+        {activeTab === 'leeway' && (
+          <div className="space-y-8 animate-fadeIn">
+            
+            {leewayAccounts.length === 0 && leewayRequestStatus === 'not_requested' && (
+              <div className="border border-surface-light bg-surface-offWhite rounded-3xl p-12 text-center space-y-4">
+                <Coins className="w-12 h-12 text-typography-muted/40 mx-auto" strokeWidth={1} />
+                <h3 className="text-lg font-serif text-typography-primary">Avail Leeway Installment Plan</h3>
+                <p className="text-xs text-typography-muted max-w-md mx-auto uppercase tracking-wider leading-relaxed">
+                  In order to buy items on installments, you must first request leeway pre-approval. Our store administrators will verify and authorize leeway eligibility for your account.
+                </p>
+                <button
+                  onClick={handleRequestLeeway}
+                  disabled={isRequestingLeeway}
+                  className="bg-brand-navy hover:bg-brand-pink text-white rounded-xl px-8 py-3.5 text-[10px] uppercase tracking-widest font-bold transition-all disabled:opacity-50 inline-flex items-center gap-2"
+                >
+                  {isRequestingLeeway && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  Request Leeway Approval
+                </button>
+              </div>
+            )}
+
+            {leewayAccounts.length === 0 && leewayRequestStatus === 'pending' && (
+              <div className="border border-amber-200 bg-amber-50/30 rounded-3xl p-12 text-center space-y-6">
+                <Loader2 className="w-12 h-12 text-amber-500 animate-spin mx-auto" strokeWidth={1} />
+                <div className="space-y-2">
+                  <h3 className="text-lg font-serif text-amber-700">Request Under Review</h3>
+                  <p className="text-xs text-typography-muted max-w-md mx-auto leading-relaxed">
+                    Your request to access leeway installment options has been submitted and is currently pending verification by our store administrators. We will update you here once approved.
+                  </p>
+                </div>
+                {leewayRequestedItems.length > 0 && (
+                  <div className="max-w-md mx-auto border-t border-amber-200/50 pt-4 text-left">
+                    <span className="text-[10px] font-bold text-amber-600 uppercase block mb-2 tracking-wider">Requested Items:</span>
+                    <div className="space-y-2.5">
+                      {leewayRequestedItems.map((item: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center text-xs text-typography-primary font-medium">
+                          <span>{item.title} {item.size ? `(${item.size})` : ''} <strong className="text-typography-muted">x{item.quantity}</strong></span>
+                          <span className="font-bold">{currencySymbol}{(item.price * item.quantity).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {leewayAccounts.length === 0 && leewayRequestStatus === 'rejected' && (
+              <div className="border border-red-200 bg-red-50/30 rounded-3xl p-12 text-center space-y-6">
+                <AlertCircle className="w-12 h-12 text-red-500 mx-auto" strokeWidth={1} />
+                <div className="space-y-2">
+                  <h3 className="text-lg font-serif text-red-700">Leeway Access Request Declined</h3>
+                  <p className="text-xs text-typography-muted max-w-md mx-auto leading-relaxed">
+                    Your request for leeway installment options has been declined by the store administrators. Installment features are currently unavailable for this account.
+                  </p>
+                </div>
+                {leewayRequestedItems.length > 0 && (
+                  <div className="max-w-md mx-auto border-t border-red-200/50 pt-4 text-left">
+                    <span className="text-[10px] font-bold text-red-500 uppercase block mb-2 tracking-wider">Requested Items:</span>
+                    <div className="space-y-2.5">
+                      {leewayRequestedItems.map((item: any, idx: number) => (
+                        <div key={idx} className="flex justify-between items-center text-xs text-typography-primary font-medium">
+                          <span>{item.title} {item.size ? `(${item.size})` : ''} <strong className="text-typography-muted">x{item.quantity}</strong></span>
+                          <span className="font-bold">{currencySymbol}{(item.price * item.quantity).toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(leewayAccounts.length > 0 || leewayRequestStatus === 'approved') && (
+              <>
+                {/* Outstanding Balance Banner */}
+                <div className="bg-gradient-to-r from-brand-navy to-[#1f2d47] text-white rounded-3xl p-6 md:p-8 relative overflow-hidden shadow-xl border border-white/5 flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+                  <div className="space-y-1 relative z-10">
+                    <span className="text-[10px] uppercase tracking-[0.2em] font-bold text-brand-pink">Cumulative Outstanding Balance</span>
+                    <h2 className="text-3xl md:text-4xl font-extrabold tracking-wide">{currencySymbol}{totalOutstandingBalance.toLocaleString()}</h2>
+                    <p className="text-xs text-white/60">Across all active leeway installment plans</p>
+                  </div>
+                  
+                  {leewayAccounts.some(a => a.status === 'active') && (
+                    <button
+                      onClick={() => {
+                        // Set default selected leeway account if possible
+                        const activeAccs = leewayAccounts.filter(a => a.status === 'active');
+                        if (activeAccs.length > 0) {
+                          setSelectedAccountId(activeAccs[0].id);
+                        }
+                        setIsSubmitModalOpen(true);
+                      }}
+                      className="bg-brand-pink hover:bg-white hover:text-brand-navy text-white rounded-2xl px-6 py-3.5 text-xs font-bold uppercase tracking-widest transition-all self-start sm:self-auto relative z-10 flex items-center gap-2 shadow-lg"
+                    >
+                      <Upload className="w-4 h-4" /> Submit Payment Receipt
+                    </button>
                   )}
 
+                  {/* Decorative backgrounds */}
+                  <div className="absolute right-0 top-0 w-48 h-48 rounded-full bg-brand-pink/5 -mr-10 -mt-10 blur-xl pointer-events-none" />
+                  <div className="absolute left-1/3 bottom-0 w-36 h-36 rounded-full bg-brand-peach/5 -ml-10 -mb-10 blur-xl pointer-events-none" />
                 </div>
-              );
-            })}
+              </>
+            )}
+
+            {loadingLeeway ? (
+              <div className="space-y-4">
+                {[1, 2].map(i => (
+                  <div key={i} className="h-28 bg-surface-offWhite border border-surface-light rounded-2xl animate-pulse" />
+                ))}
+              </div>
+            ) : leewayAccounts.length === 0 && leewayRequestStatus === 'approved' ? (
+              <div className="border border-surface-light bg-surface-offWhite rounded-3xl p-12 text-center">
+                <Coins className="w-12 h-12 text-typography-muted/40 mx-auto mb-4" strokeWidth={1} />
+                <h3 className="text-lg font-serif text-typography-primary">No Leeway Accounts</h3>
+                <p className="text-xs text-typography-muted mt-1 uppercase tracking-wider mb-6">Choose the Leeway payment option when checking out to pay in installments.</p>
+                <Link to="/shop" className="bg-brand-navy hover:bg-brand-pink text-white px-8 py-3.5 text-[10px] uppercase tracking-widest font-bold transition-all">Shop Collections</Link>
+              </div>
+            ) : leewayAccounts.length > 0 ? (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-xs uppercase tracking-widest font-bold text-typography-primary mb-4">Active Installment Plans</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {leewayAccounts.map(account => {
+                      const orderItems = account.order?.order_items || [];
+                      const itemsTitle = orderItems.map(i => i.title).join(", ") || "KBDF Luxury Items";
+                      const progressPercent = account.total_amount > 0 
+                        ? ((account.total_amount - account.remaining_balance) / account.total_amount) * 100 
+                        : 0;
+
+                      return (
+                        <div key={account.id} className="border border-surface-light bg-surface-offWhite p-6 rounded-2xl space-y-4 relative flex flex-col justify-between hover:border-brand-pink transition-all">
+                          <div className="space-y-2">
+                            <div className="flex justify-between items-start">
+                              <span className="font-mono text-xs font-bold text-typography-primary tracking-wider">{account.order?.tracking_number}</span>
+                              <span className={`px-2 py-0.5 text-[8px] rounded uppercase font-bold border ${
+                                account.status === 'active' 
+                                  ? 'bg-blue-50 text-blue-500 border-blue-200' 
+                                  : 'bg-emerald-50 text-emerald-500 border-emerald-200'
+                              }`}>
+                                {account.status}
+                              </span>
+                            </div>
+                            
+                            <div>
+                              <p className="font-bold text-sm text-typography-primary line-clamp-1">{itemsTitle}</p>
+                              <p className="text-[10px] text-typography-muted mt-0.5 capitalize">Schedule: {account.payment_schedule} plan</p>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2 pt-2 border-t border-surface-light">
+                            <div className="flex justify-between text-xs font-semibold">
+                              <span className="text-typography-muted">Paid Progress</span>
+                              <span className="text-typography-primary">{currencySymbol}{(account.total_amount - account.remaining_balance).toLocaleString()} / {currencySymbol}{account.total_amount.toLocaleString()}</span>
+                            </div>
+                            
+                            {/* Progress bar */}
+                            <div className="w-full bg-surface-light h-1.5 rounded-full overflow-hidden">
+                              <div 
+                                className="bg-brand-pink h-full transition-all duration-500" 
+                                style={{ width: `${progressPercent}%` }} 
+                              />
+                            </div>
+
+                            <div className="flex justify-between items-end pt-1">
+                              <div>
+                                <span className="text-[9px] uppercase text-typography-muted block">Remaining Balance</span>
+                                <span className="font-bold text-sm text-typography-primary">{currencySymbol}{account.remaining_balance.toLocaleString()}</span>
+                              </div>
+
+                              {account.status === 'active' && (
+                                <button
+                                  onClick={() => {
+                                    setSelectedAccountId(account.id);
+                                    setIsSubmitModalOpen(true);
+                                  }}
+                                  className="bg-brand-navy hover:bg-brand-pink text-white rounded-lg px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all"
+                                >
+                                  Pay Installment
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Submitted Installments Verification logs */}
+                <div className="pt-4">
+                  <h3 className="text-xs uppercase tracking-widest font-bold text-typography-primary mb-4">Installment Payment Submissions</h3>
+                  {leewayPayments.length === 0 ? (
+                    <p className="text-xs text-typography-muted italic bg-surface-offWhite border border-surface-light p-4 rounded-xl">No payments have been submitted yet.</p>
+                  ) : (
+                    <div className="border border-surface-light rounded-2xl overflow-hidden bg-surface-offWhite">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr className="bg-surface-light/40 border-b border-surface-light text-[9px] uppercase tracking-wider font-bold text-typography-muted">
+                              <th className="p-4">Submit Date</th>
+                              <th className="p-4">Tracking Number</th>
+                              <th className="p-4">Amount Paid</th>
+                              <th className="p-4">Type</th>
+                              <th className="p-4">Receipt</th>
+                              <th className="p-4">Verification Status</th>
+                              <th className="p-4">Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-surface-light">
+                            {leewayPayments.map(payment => {
+                              let statusStyle = '';
+                              if (payment.status === 'pending_verification') statusStyle = 'bg-amber-50 text-amber-500 border-amber-200';
+                              else if (payment.status === 'verified') statusStyle = 'bg-emerald-50 text-emerald-500 border-emerald-200';
+                              else statusStyle = 'bg-red-50 text-red-500 border-red-200';
+
+                              return (
+                                <tr key={payment.id} className="hover:bg-surface-light/20 transition-all text-typography-primary font-medium">
+                                  <td className="p-4 whitespace-nowrap">{new Date(payment.created_at).toLocaleDateString(undefined, { dateStyle: 'medium' })}</td>
+                                  <td className="p-4 font-mono font-bold">{payment.leeway_account?.order?.tracking_number}</td>
+                                  <td className="p-4 font-bold">{currencySymbol}{payment.amount.toLocaleString()}</td>
+                                  <td className="p-4 capitalize">
+                                    <span className="text-[9px] font-bold">{payment.payment_type.replace('_', ' ')}</span>
+                                  </td>
+                                  <td className="p-4">
+                                    <a 
+                                      href={payment.proof_of_payment_url} 
+                                      target="_blank" 
+                                      rel="noreferrer" 
+                                      className="text-brand-pink hover:underline font-bold inline-flex items-center gap-0.5"
+                                    >
+                                      View <ArrowUpRight className="w-3 h-3" />
+                                    </a>
+                                  </td>
+                                  <td className="p-4">
+                                    <span className={`px-2 py-0.5 rounded-full border text-[9px] uppercase font-bold tracking-wider ${statusStyle}`}>
+                                      {payment.status.replace('_', ' ')}
+                                    </span>
+                                  </td>
+                                  <td className="p-4 text-typography-muted italic text-[11px] max-w-[180px] truncate" title={payment.admin_notes || ""}>
+                                    {payment.admin_notes || '—'}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
         )}
 
       </div>
+
+      {/* Submit Payment Receipt Modal */}
+      {isSubmitModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-surface-light rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col my-8 animate-scaleUp">
+            
+            {/* Header */}
+            <div className="px-6 py-5 border-b border-surface-light flex items-center justify-between">
+              <h3 className="text-typography-primary font-serif text-lg">
+                Submit Installment Payment
+              </h3>
+              <button 
+                onClick={() => { setIsSubmitModalOpen(false); setSubmitReceiptUrl(""); setPaymentAmount(0); }} 
+                className="text-typography-muted hover:text-typography-primary transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleSubmitLeewayPayment} className="p-6 space-y-6 overflow-y-auto">
+              
+              {/* Account Plan Selector */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase text-typography-primary">Select Installment Plan *</label>
+                <select
+                  value={selectedAccountId}
+                  onChange={e => setSelectedAccountId(e.target.value)}
+                  required
+                  className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink"
+                >
+                  <option value="">Choose a plan...</option>
+                  {leewayAccounts
+                    .filter(a => a.status === 'active')
+                    .map(a => (
+                      <option key={a.id} value={a.id}>
+                        {a.order?.tracking_number} (Bal: {currencySymbol}{a.remaining_balance.toLocaleString()})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {/* Amount input */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase text-typography-primary">Payment Amount (PHP) *</label>
+                <input
+                  type="number"
+                  value={paymentAmount || ''}
+                  onChange={e => setPaymentAmount(Math.max(0.01, Number(e.target.value)))}
+                  required
+                  min="0.01"
+                  step="0.01"
+                  placeholder="e.g. 1500"
+                  className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary placeholder:text-typography-muted/40 outline-none focus:border-brand-pink"
+                />
+              </div>
+
+              {/* Digital payment instructions */}
+              {paymentMethods.length > 0 && (
+                <div className="border border-surface-light bg-surface-offWhite p-4 rounded-2xl space-y-4">
+                  <span className="text-[10px] uppercase font-bold text-typography-primary tracking-widest block border-b border-surface-light pb-1.5">Transfer instructions</span>
+                  <div className="space-y-3 max-h-40 overflow-y-auto pr-1">
+                    {paymentMethods.map(m => (
+                      <div key={m.id} className="text-xs text-typography-primary">
+                        <p className="font-bold uppercase text-brand-pink">{m.name} ({m.type.replace('_', ' ')})</p>
+                        {m.instructions && <p className="text-[11px] text-typography-muted mt-0.5">{m.instructions}</p>}
+                        {m.account_name && <p className="text-[11px] mt-1"><strong>Name:</strong> {m.account_name}</p>}
+                        {m.account_number && <p className="text-[11px]"><strong>Number:</strong> {m.account_number}</p>}
+                        {m.qr_code_url && (
+                          <a href={m.qr_code_url} target="_blank" rel="noreferrer" className="text-[10px] font-bold text-brand-navy block mt-1 hover:underline">View QR Code image</a>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Receipt Upload */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase text-typography-primary">Upload Transfer Receipt (Photo) *</label>
+                <ImageUploadInput
+                  value={submitReceiptUrl}
+                  onChange={setSubmitReceiptUrl}
+                  tenantId={tenant!.id}
+                  placeholder="Select screenshot file..."
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="pt-4 border-t border-surface-light flex items-center justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => { setIsSubmitModalOpen(false); setSubmitReceiptUrl(""); setPaymentAmount(0); }}
+                  className="px-5 py-2.5 bg-surface-offWhite text-typography-primary rounded-xl text-xs uppercase font-bold tracking-wider hover:bg-surface-light/40 transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingPayment}
+                  className="px-6 py-2.5 bg-brand-navy hover:bg-brand-pink text-white rounded-xl text-xs uppercase font-bold tracking-widest transition-all flex items-center gap-2"
+                >
+                  {isSubmittingPayment && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                  {isSubmittingPayment ? 'Submitting...' : 'Submit Payment'}
+                </button>
+              </div>
+            </form>
+
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

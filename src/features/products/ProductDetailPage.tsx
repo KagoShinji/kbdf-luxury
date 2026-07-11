@@ -196,6 +196,19 @@ export function ProductDetailPage() {
                 <p className="text-xs text-typography-muted mt-2">
                   Tax included.
                 </p>
+                {product.leeway_enabled && (
+                  <div className="mt-3 p-3 bg-brand-pink/5 border border-brand-pink/20 rounded-xl text-xs space-y-1">
+                    <span className="font-bold text-brand-pink uppercase tracking-wider block text-[10px]">Leeway Plan Available</span>
+                    <p className="text-typography-muted text-[11px]">
+                      Acquire this item now with a downpayment, then settle the remaining balance in installments (weekly, monthly, or flexible).
+                    </p>
+                    {product.leeway_down_payment_required && (
+                      <p className="text-typography-primary font-semibold text-[11px]">
+                        Required Downpayment: PHP {product.leeway_down_payment_amount?.toLocaleString()}
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Color Selection */}

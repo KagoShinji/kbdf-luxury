@@ -20,6 +20,9 @@ export interface Product {
   condition: 'new' | 'preloved_excellent' | 'preloved_good' | 'preloved_fair';
   brand: string;
   sizes?: { size: string; quantity: number }[];
+  leeway_enabled?: boolean;
+  leeway_down_payment_required?: boolean;
+  leeway_down_payment_amount?: number;
   created_at: string;
 }
 

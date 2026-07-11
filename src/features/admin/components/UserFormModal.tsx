@@ -22,6 +22,7 @@ const ACCESS_MODULES = [
   { key: 'access_categories', label: 'Categories' },
   { key: 'access_roles', label: 'Roles' },
   { key: 'access_payment_methods', label: 'Payment Methods & QR' },
+  { key: 'access_leeway', label: 'Leeway Management' },
 ];
 
 export function UserFormModal({ isOpen, onClose, onSave, user, tenantId }: UserFormModalProps) {

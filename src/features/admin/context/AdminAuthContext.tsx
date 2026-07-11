@@ -114,6 +114,16 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       return hasModuleAccess && isSystemOrAdmin;
     }
 
+    // Fallback for leeway module
+    if (module === 'leeway') {
+      const hasModuleAccess = hasAccess('leeway');
+      const isSystemOrAdmin = 
+        role.name.toLowerCase() === 'admin' || 
+        role.name.toLowerCase() === 'administrator' || 
+        role.is_system_role;
+      return hasModuleAccess && isSystemOrAdmin;
+    }
+
     return false;
   }
 

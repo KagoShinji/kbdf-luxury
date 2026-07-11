@@ -32,6 +32,11 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
 
+  // Leeway states
+  const [leewayEnabled, setLeewayEnabled] = useState(false);
+  const [leewayDownPaymentRequired, setLeewayDownPaymentRequired] = useState(false);
+  const [leewayDownPaymentAmount, setLeewayDownPaymentAmount] = useState(0);
+
   useEffect(() => {
     if (isOpen) {
       fetchCategories(tenantId)
@@ -51,6 +56,9 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
         setCategoryId(item.category_id || '');
         setImageUrls(item.image_urls && item.image_urls.length > 0 ? item.image_urls : ['']);
         setSizes(item.sizes || []);
+        setLeewayEnabled((item as any).leeway_enabled || false);
+        setLeewayDownPaymentRequired((item as any).leeway_down_payment_required || false);
+        setLeewayDownPaymentAmount(Number((item as any).leeway_down_payment_amount || 0));
       } else {
         setTitle('');
         setDescription('');
@@ -64,6 +72,9 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
         setCategoryId('');
         setImageUrls(['']);
         setSizes([]);
+        setLeewayEnabled(false);
+        setLeewayDownPaymentRequired(false);
+        setLeewayDownPaymentAmount(0);
       }
       setSizeInput('');
       setSizeQuantityInput(1);
@@ -140,6 +151,9 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
         stock_status: stockStatus,
         image_urls: filteredImages,
         sizes: sizes.length > 0 ? sizes : null,
+        leeway_enabled: leewayEnabled,
+        leeway_down_payment_required: leewayDownPaymentRequired,
+        leeway_down_payment_amount: leewayEnabled && leewayDownPaymentRequired ? leewayDownPaymentAmount : 0,
         is_active: true
       };
 
@@ -305,6 +319,58 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
                 <option value="preloved_fair">Preloved (Fair)</option>
               </select>
             </div>
+          </div>
+
+          {/* Leeway Configuration */}
+          <div className="border-t border-white/5 pt-4 space-y-4">
+            <h4 className="text-white/80 text-sm font-semibold uppercase tracking-wider">Leeway Payment Settings</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={leewayEnabled}
+                  onChange={e => {
+                    setLeewayEnabled(e.target.checked);
+                    if (!e.target.checked) {
+                      setLeewayDownPaymentRequired(false);
+                      setLeewayDownPaymentAmount(0);
+                    }
+                  }}
+                  className="w-4 h-4 rounded border-white/10 text-[#fb7a90] bg-transparent outline-none focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                />
+                Available for Leeway Checkout
+              </label>
+
+              {leewayEnabled && (
+                <label className="flex items-center gap-3 text-sm text-white/80 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={leewayDownPaymentRequired}
+                    onChange={e => {
+                      setLeewayDownPaymentRequired(e.target.checked);
+                      if (!e.target.checked) setLeewayDownPaymentAmount(0);
+                    }}
+                    className="w-4 h-4 rounded border-white/10 text-[#fb7a90] bg-transparent outline-none focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                  />
+                  Require Down Payment
+                </label>
+              )}
+            </div>
+
+            {leewayEnabled && leewayDownPaymentRequired && (
+              <div className="flex flex-col gap-2 max-w-xs">
+                <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Required Down Payment Amount (PHP)</label>
+                <input
+                  type="number"
+                  value={leewayDownPaymentAmount || ''}
+                  onChange={e => setLeewayDownPaymentAmount(Math.max(0, Number(e.target.value)))}
+                  min="0"
+                  step="0.01"
+                  placeholder="e.g. 1000"
+                  className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/20 outline-none focus:border-[#fb7a90]/50 transition-colors"
+                />
+              </div>
+            )}
           </div>
 
           {/* Description */}

@@ -102,6 +102,9 @@ export async function fetchProducts(categorySlug?: string, searchQuery?: string)
       condition: item.condition,
       brand: item.brand || 'KBDF',
       sizes: item.sizes || [],
+      leeway_enabled: item.leeway_enabled || false,
+      leeway_down_payment_required: item.leeway_down_payment_required || false,
+      leeway_down_payment_amount: item.leeway_down_payment_amount ? Number(item.leeway_down_payment_amount) : 0,
       created_at: item.created_at
     }));
   } catch (err) {
@@ -139,6 +142,9 @@ export async function fetchProductBySlug(slug: string): Promise<Product | null> 
       condition: data.condition,
       brand: data.brand || 'KBDF',
       sizes: data.sizes || [],
+      leeway_enabled: data.leeway_enabled || false,
+      leeway_down_payment_required: data.leeway_down_payment_required || false,
+      leeway_down_payment_amount: data.leeway_down_payment_amount ? Number(data.leeway_down_payment_amount) : 0,
       created_at: data.created_at
     };
   } catch (err) {

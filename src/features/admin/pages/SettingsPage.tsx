@@ -18,6 +18,7 @@ export function SettingsPage() {
   const [accentColor, setAccentColor] = useState('#fb7a90');
   const [currencySymbol, setCurrencySymbol] = useState('₱');
   const [timezone, setTimezone] = useState('Asia/Manila');
+  const [reservationDurationMins, setReservationDurationMins] = useState(5);
 
   // Tab 2: Contact
   const [address, setAddress] = useState('');
@@ -99,6 +100,7 @@ export function SettingsPage() {
       setAccentColor(tenant.accent_color || '#fb7a90');
       setCurrencySymbol(tenant.currency_symbol || '₱');
       setTimezone(tenant.timezone || 'Asia/Manila');
+      setReservationDurationMins(Math.round((tenant.reservation_duration_seconds ?? 300) / 60));
 
       const settings = (tenant.store_settings as any) || {};
       setAddress(settings.address || '');
@@ -278,6 +280,7 @@ export function SettingsPage() {
           accent_color: accentColor,
           currency_symbol: currencySymbol.trim(),
           timezone,
+          reservation_duration_seconds: Math.max(60, reservationDurationMins * 60),
           store_settings: storeSettings
         })
         .eq('id', tenant!.id);
@@ -477,6 +480,23 @@ export function SettingsPage() {
                   <option value="Asia/Singapore">Singapore (GMT+8)</option>
                   <option value="UTC">UTC (GMT+0)</option>
                 </select>
+              </div>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Checkout Reservation Duration</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={reservationDurationMins}
+                    onChange={e => setReservationDurationMins(Math.max(1, Number(e.target.value)))}
+                    min={1}
+                    max={60}
+                    disabled={!canEdit}
+                    className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#fb7a90]/50 transition-colors disabled:opacity-50 w-24"
+                  />
+                  <span className="text-white/50 text-xs">minutes</span>
+                </div>
+                <p className="text-white/30 text-[10px]">How long items are held during checkout when stock is tight. Default: 5 mins.</p>
               </div>
             </div>
           </div>
