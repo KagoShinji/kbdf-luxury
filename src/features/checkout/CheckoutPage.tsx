@@ -708,7 +708,7 @@ export function CheckoutPage() {
     showSuccess('Tracking number copied to clipboard!');
   };
 
-  if (items.length === 0 && step !== 5) {
+  if (items.length === 0 && step !== 4 && step !== 5) {
     return (
       <div className="pt-32 pb-24 min-h-screen bg-surface-white flex flex-col items-center justify-center text-center px-4">
         <ShoppingBag className="w-12 h-12 text-brand-pink mb-4" strokeWidth={1} />
@@ -894,7 +894,7 @@ export function CheckoutPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
           
           {/* LEFT: Stepped Inputs */}
-          <div className="lg:col-span-2 space-y-8">
+          <div className={`${step === 4 ? 'lg:col-span-3 max-w-2xl mx-auto w-full' : 'lg:col-span-2'} space-y-8`}>
             
             {/* STEP 1: CONTACT DETAILS & SHIPPING */}
             {step === 1 && (
@@ -1387,7 +1387,7 @@ export function CheckoutPage() {
           </div>
 
           {/* RIGHT: Order Summary */}
-          {step < 5 && (
+          {step < 4 && (
             <div className="bg-surface-offWhite border border-surface-light rounded-2xl p-6 h-max space-y-6">
               <h3 className="text-xs uppercase tracking-widest font-bold text-typography-primary border-b border-surface-light pb-2">Order Summary</h3>
               
