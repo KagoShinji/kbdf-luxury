@@ -5,11 +5,13 @@ import { useNotification } from "../../core/context/NotificationContext";
 import { supabase } from "../../lib/supabase/supabaseClient";
 import { 
   Check, Calendar, ShoppingBag, MapPin, CreditCard, ChevronDown, 
-  ChevronUp, AlertCircle, Loader2, Coins, ArrowUpRight, Upload, X, CheckCircle 
+  ChevronUp, AlertCircle, Loader2, Coins, ArrowUpRight, Upload, X, CheckCircle,
+  Heart, Trash2
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useCart } from "../cart/CartContext";
 import { ImageUploadInput } from "../admin/components/ImageUploadInput";
+import { useFavorites } from "../favorites/FavoritesContext";
 
 interface OrderItem {
   id: string;
@@ -83,12 +85,22 @@ export function CustomerOrdersPage() {
   const { showSuccess, showError } = useNotification();
   const navigate = useNavigate();
   const { setCartItems } = useCart();
+  const [searchParams] = useSearchParams();
 
-  const [activeTab, setActiveTab] = useState<'orders' | 'leeway'>('orders');
+  const [activeTab, setActiveTab] = useState<'orders' | 'leeway' | 'favorites'>('orders');
   const [orders, setOrders] = useState<Order[]>([]);
   const [loadingOrders, setLoadingOrders] = useState(true);
   const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
   const [receiptUrlMap, setReceiptUrlMap] = useState<{ [orderId: string]: string }>({});
+
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab === 'favorites') {
+      setActiveTab('favorites');
+    } else if (tab === 'leeway') {
+      setActiveTab('leeway');
+    }
+  }, [searchParams]);
 
   // Leeway states
   const [leewayAccounts, setLeewayAccounts] = useState<LeewayAccount[]>([]);
@@ -105,6 +117,114 @@ export function CustomerOrdersPage() {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [submitReceiptUrl, setSubmitReceiptUrl] = useState("");
   const [isSubmittingPayment, setIsSubmittingPayment] = useState(false);
+
+  // Favorites states
+  const { favorites, toggleFavorite } = useFavorites();
+  const [selectedFavIds, setSelectedFavIds] = useState<string[]>([]);
+  const [selectedFavSizes, setSelectedFavSizes] = useState<{ [itemId: string]: string }>({});
+  const [isCheckingOutBulk, setIsCheckingOutBulk] = useState(false);
+
+  const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.checked) {
+      const inStockFavs = favorites.filter(fav => {
+        const hasSizes = fav.product.sizes && fav.product.sizes.length > 0;
+        return fav.product.stock_status !== 'out_of_stock' && 
+          fav.product.stock_quantity !== 0 && 
+          (!hasSizes || (fav.product.sizes && fav.product.sizes.some(s => s.quantity > 0)));
+      });
+      setSelectedFavIds(inStockFavs.map(fav => fav.item_id));
+    } else {
+      setSelectedFavIds([]);
+    }
+  };
+
+  const handleToggleSelect = (itemId: string) => {
+    setSelectedFavIds(prev => 
+      prev.includes(itemId) ? prev.filter(id => id !== itemId) : [...prev, itemId]
+    );
+  };
+
+  const handleSizeChange = (itemId: string, size: string) => {
+    setSelectedFavSizes(prev => ({
+      ...prev,
+      [itemId]: size
+    }));
+  };
+
+  const handleCheckoutSelected = async () => {
+    if (selectedFavIds.length === 0) {
+      showError('Please select at least one item to check out.');
+      return;
+    }
+
+    setIsCheckingOutBulk(true);
+    try {
+      const selectedItems = favorites.filter(fav => selectedFavIds.includes(fav.item_id));
+      
+      // Validate sizes
+      for (const fav of selectedItems) {
+        const hasSizes = fav.product.sizes && fav.product.sizes.length > 0;
+        if (hasSizes) {
+          const chosenSize = selectedFavSizes[fav.item_id];
+          if (!chosenSize) {
+            showError(`Please select a size for ${fav.product.title}`);
+            setIsCheckingOutBulk(false);
+            return;
+          }
+        }
+      }
+
+      // Check stock status in real-time
+      const { data: dbProducts, error } = await supabase
+        .from('items')
+        .select('*')
+        .in('id', selectedFavIds);
+
+      if (error) throw error;
+
+      const cartItemsToSet = selectedItems.map(fav => {
+        const dbProd = dbProducts.find((p: any) => p.id === fav.item_id);
+        const hasSizes = fav.product.sizes && fav.product.sizes.length > 0;
+        const selectedSize = hasSizes ? selectedFavSizes[fav.item_id] : null;
+
+        if (dbProd) {
+          if (dbProd.stock_status === 'out_of_stock' || dbProd.quantity <= 0) {
+            throw new Error(`${fav.product.title} is now out of stock.`);
+          }
+          if (hasSizes) {
+            const sizeObj = dbProd.sizes?.find((s: any) => s.size === selectedSize);
+            if (!sizeObj || sizeObj.quantity <= 0) {
+              throw new Error(`Size ${selectedSize} for ${fav.product.title} is now out of stock.`);
+            }
+          }
+        }
+
+        return {
+          id: fav.product.id,
+          title: fav.product.title,
+          price: fav.product.price,
+          quantity: 1,
+          selectedSize: selectedSize || null,
+          image_urls: fav.product.image_urls,
+          brand: fav.product.brand,
+          stock_status: dbProd?.stock_status || fav.product.stock_status,
+          stock_quantity: dbProd ? Number(dbProd.quantity) : fav.product.stock_quantity,
+          sizes: dbProd?.sizes || fav.product.sizes,
+          slug: fav.product.slug,
+          description: fav.product.description || ''
+        } as any;
+      });
+
+      setCartItems(cartItemsToSet);
+      showSuccess('Selected favorites added to bag!');
+      navigate('/checkout');
+    } catch (err: any) {
+      console.error(err);
+      showError(err.message || 'Failed to checkout selected items.');
+    } finally {
+      setIsCheckingOutBulk(false);
+    }
+  };
 
   const currencySymbol = tenant?.currency_symbol || '₱';
 
@@ -421,7 +541,7 @@ export function CustomerOrdersPage() {
             <p className="text-xs text-typography-muted uppercase tracking-wider">Manage your purchase records and active leeway schedules</p>
           </div>
 
-          <div className="flex gap-2 self-start md:self-auto bg-surface-offWhite p-1 border border-surface-light rounded-2xl">
+          <div className="flex flex-wrap gap-2 self-start md:self-auto bg-surface-offWhite p-1 border border-surface-light rounded-2xl">
             <button
               onClick={() => setActiveTab('orders')}
               className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
@@ -437,6 +557,14 @@ export function CustomerOrdersPage() {
               }`}
             >
               <Coins className="w-4 h-4" /> Leeway Installments
+            </button>
+            <button
+              onClick={() => setActiveTab('favorites')}
+              className={`px-5 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 ${
+                activeTab === 'favorites' ? 'bg-brand-navy text-white shadow-md' : 'text-typography-muted hover:text-typography-primary'
+              }`}
+            >
+              <Heart className="w-4 h-4" /> Favorites List
             </button>
           </div>
         </div>
@@ -898,6 +1026,154 @@ export function CustomerOrdersPage() {
                 </div>
               </div>
             ) : null}
+          </div>
+        )}
+
+        {/* Tab 3: Favorites List */}
+        {activeTab === 'favorites' && (
+          <div className="space-y-6">
+            {favorites.length === 0 ? (
+              <div className="border border-surface-light bg-surface-offWhite rounded-3xl p-12 text-center">
+                <Heart className="w-12 h-12 text-typography-muted/40 mx-auto mb-4" strokeWidth={1} />
+                <h3 className="text-lg font-serif text-typography-primary">Your Favorites List is Empty</h3>
+                <p className="text-xs text-typography-muted mt-1 uppercase tracking-wider mb-6">Heart items while browsing our collections to save them here.</p>
+                <Link to="/shop" className="bg-brand-navy hover:bg-brand-pink text-white px-8 py-3.5 text-[10px] uppercase tracking-widest font-bold transition-all rounded-xl inline-block">Go Shopping</Link>
+              </div>
+            ) : (
+              <div className="border border-surface-light bg-surface-white rounded-3xl overflow-hidden shadow-sm">
+                {/* Bulk Actions Header */}
+                <div className="px-6 py-4 bg-surface-offWhite border-b border-surface-light flex items-center justify-between flex-wrap gap-4">
+                  <label className="flex items-center gap-3 text-xs font-bold uppercase text-typography-primary cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={selectedFavIds.length > 0 && selectedFavIds.length === favorites.filter(f => {
+                        const hasSizes = f.product.sizes && f.product.sizes.length > 0;
+                        return f.product.stock_status !== 'out_of_stock' && f.product.stock_quantity !== 0 && (!hasSizes || (f.product.sizes && f.product.sizes.some(s => s.quantity > 0)));
+                      }).length}
+                      onChange={handleSelectAll}
+                      className="w-4 h-4 rounded border-surface-light text-brand-pink focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                    />
+                    Select All In-Stock
+                  </label>
+                  
+                  <button
+                    onClick={handleCheckoutSelected}
+                    disabled={selectedFavIds.length === 0 || isCheckingOutBulk}
+                    className="px-6 py-2.5 bg-brand-navy hover:bg-brand-pink text-white disabled:bg-typography-muted/20 disabled:text-typography-muted/40 disabled:cursor-not-allowed rounded-xl text-xs uppercase font-bold tracking-widest transition-all flex items-center gap-2 shadow-sm"
+                  >
+                    {isCheckingOutBulk ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ShoppingBag className="w-3.5 h-3.5" />}
+                    {isCheckingOutBulk ? 'Preparing Checkout...' : `Checkout Selected (${selectedFavIds.length})`}
+                  </button>
+                </div>
+
+                {/* Items List */}
+                <div className="divide-y divide-surface-light">
+                  {favorites.map((fav) => {
+                    const hasSizes = fav.product.sizes && fav.product.sizes.length > 0;
+                    const isItemOutOfStock = 
+                      fav.product.stock_status === 'out_of_stock' || 
+                      fav.product.stock_quantity === 0 || 
+                      (hasSizes && (!fav.product.sizes || fav.product.sizes.every(s => s.quantity <= 0)));
+
+                    const selectedSize = selectedFavSizes[fav.item_id] || "";
+
+                    return (
+                      <div key={fav.id} className="p-6 flex items-center gap-4 md:gap-6 flex-wrap md:flex-nowrap hover:bg-surface-offWhite/30 transition-colors">
+                        {/* Checkbox */}
+                        <div className="flex-shrink-0">
+                          <input
+                            type="checkbox"
+                            disabled={isItemOutOfStock}
+                            checked={selectedFavIds.includes(fav.item_id)}
+                            onChange={() => handleToggleSelect(fav.item_id)}
+                            className="w-4 h-4 rounded border-surface-light text-brand-pink focus:ring-0 focus:ring-offset-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                          />
+                        </div>
+
+                        {/* Image */}
+                        <div className="w-20 h-20 md:w-24 md:h-24 bg-surface-offWhite border border-surface-light rounded-2xl overflow-hidden flex-shrink-0">
+                          <img
+                            src={fav.product.image_urls[0] || "/placeholder.jpg"}
+                            alt={fav.product.title}
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+
+                        {/* Title, Brand, Status */}
+                        <div className="flex-1 min-w-[200px] space-y-1">
+                          <p className="text-[10px] uppercase font-bold text-brand-pink tracking-widest">{fav.product.brand}</p>
+                          <h4 className="font-serif text-sm text-typography-primary hover:text-brand-pink transition-colors">
+                            <Link to={`/product/${fav.product.slug}`}>{fav.product.title}</Link>
+                          </h4>
+                          
+                          {/* Stock Status Badge */}
+                          <div className="pt-1">
+                            {isItemOutOfStock ? (
+                              <span className="inline-block bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-0.5 text-[9px] uppercase font-semibold rounded">
+                                Out of Stock
+                              </span>
+                            ) : (
+                              <span className="inline-block bg-green-500/10 text-green-600 border border-green-500/20 px-2 py-0.5 text-[9px] uppercase font-semibold rounded">
+                                In Stock
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Size Selector */}
+                        <div className="flex-shrink-0 w-full md:w-auto flex flex-col gap-1">
+                          {hasSizes ? (
+                            <>
+                              <label className="text-[9px] font-bold uppercase text-typography-muted font-mono tracking-wider">Choose Size:</label>
+                              <select
+                                disabled={isItemOutOfStock}
+                                value={selectedSize}
+                                onChange={(e) => handleSizeChange(fav.item_id, e.target.value)}
+                                className="bg-surface-offWhite border border-surface-light rounded-xl px-3 py-2 text-xs text-typography-primary outline-none focus:border-brand-pink disabled:opacity-50 min-w-[120px]"
+                              >
+                                <option value="">Select Size...</option>
+                                {fav.product.sizes
+                                  ?.filter(s => s.quantity > 0)
+                                  .map(s => (
+                                    <option key={s.size} value={s.size}>
+                                      {s.size} ({s.quantity} left)
+                                    </option>
+                                  ))}
+                              </select>
+                            </>
+                          ) : (
+                            <span className="text-[10px] font-semibold text-typography-muted bg-surface-offWhite px-3 py-1.5 rounded-lg border border-surface-light">One Size</span>
+                          )}
+                        </div>
+
+                        {/* Price */}
+                        <div className="flex-shrink-0 text-right min-w-[100px]">
+                          <p className="text-sm font-bold text-typography-primary">
+                            {currencySymbol}{fav.product.price.toLocaleString()}
+                          </p>
+                          {fav.product.original_price && (
+                            <p className="text-[10px] text-typography-muted line-through">
+                              {currencySymbol}{fav.product.original_price.toLocaleString()}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Delete button */}
+                        <div className="flex-shrink-0">
+                          <button
+                            onClick={() => toggleFavorite(fav.product)}
+                            className="p-2 text-typography-muted hover:text-red-500 hover:bg-red-500/5 rounded-xl transition-all"
+                            title="Remove from favorites"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -8,6 +8,7 @@ import { ContactPage } from "./features/contact/ContactPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { CartProvider } from "./features/cart/CartContext";
 import { CartDrawer } from "./features/cart/CartDrawer";
+import { FavoritesProvider } from "./features/favorites/FavoritesContext";
 import { ProductDetailPage } from "./features/products/ProductDetailPage";
 
 // Admin Imports
@@ -56,20 +57,22 @@ function App() {
               path="/*"
               element={
                 <TenantProvider>
-                  <AppShell>
-                    <Routes>
-                      <Route path="/" element={<HomePage />} />
-                      <Route path="/shop" element={<ShopPage />} />
-                      <Route path="/product/:slug" element={<ProductDetailPage />} />
-                      <Route path="/categories" element={<CategoriesPage />} />
-                      <Route path="/contact" element={<ContactPage />} />
-                      <Route path="/track" element={<TrackPage />} />
-                      <Route path="/checkout" element={<CheckoutPage />} />
-                      <Route path="/orders" element={<CustomerOrdersPage />} />
-                      <Route path="/auth" element={<AuthPage />} />
-                    </Routes>
-                    <CartDrawer />
-                  </AppShell>
+                  <FavoritesProvider>
+                    <AppShell>
+                      <Routes>
+                        <Route path="/" element={<HomePage />} />
+                        <Route path="/shop" element={<ShopPage />} />
+                        <Route path="/product/:slug" element={<ProductDetailPage />} />
+                        <Route path="/categories" element={<CategoriesPage />} />
+                        <Route path="/contact" element={<ContactPage />} />
+                        <Route path="/track" element={<TrackPage />} />
+                        <Route path="/checkout" element={<CheckoutPage />} />
+                        <Route path="/orders" element={<CustomerOrdersPage />} />
+                        <Route path="/auth" element={<AuthPage />} />
+                      </Routes>
+                      <CartDrawer />
+                    </AppShell>
+                  </FavoritesProvider>
                 </TenantProvider>
               }
             />

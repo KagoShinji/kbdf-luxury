@@ -2,6 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import type { Product } from "../types";
 import { FadeUp } from "../../../ui/Motion/FadeUp";
 import { Heart } from "lucide-react";
+import { useFavorites } from '../../favorites/FavoritesContext';
 
 interface ProductCardProps {
   product: Product;
@@ -10,12 +11,15 @@ interface ProductCardProps {
 
 export function ProductCard({ product, index }: ProductCardProps) {
   const navigate = useNavigate();
+  const { isFavorite, toggleFavorite } = useFavorites();
 
   const hasSizes = product.sizes && product.sizes.length > 0;
   const isOutOfStock = 
     product.stock_status === 'out_of_stock' || 
     product.stock_quantity === 0 || 
     (hasSizes && (!product.sizes || product.sizes.every(s => s.quantity <= 0)));
+
+  const favorited = isFavorite(product.id);
 
   return (
     <FadeUp delay={index * 0.1}>
@@ -25,10 +29,14 @@ export function ProductCard({ product, index }: ProductCardProps) {
       >
         {/* Wishlist Heart */}
         <button 
-          className="absolute top-4 right-4 z-10 text-typography-primary hover:text-brand-pink transition-colors"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); }}
+          className="absolute top-4 right-4 z-10 hover:text-brand-pink transition-colors"
+          onClick={(e) => { 
+            e.preventDefault(); 
+            e.stopPropagation(); 
+            toggleFavorite(product);
+          }}
         >
-          <Heart className="w-5 h-5" strokeWidth={1} />
+          <Heart className={`w-5 h-5 transition-all ${favorited ? 'text-brand-pink fill-brand-pink scale-110' : 'text-typography-primary'}`} strokeWidth={1.5} />
         </button>
 
         {isOutOfStock && (

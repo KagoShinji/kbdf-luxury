@@ -1,11 +1,12 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Search, ShoppingBag, User, LogOut, ClipboardList } from "lucide-react";
+import { Search, ShoppingBag, User, LogOut, ClipboardList, Heart } from "lucide-react";
 import { Link, useNavigate } from "react-router-dom";
 import { useCart } from "../../features/cart/CartContext";
 import { useTenant } from "../context/TenantContext";
 import { useUserAuth } from "../context/UserAuthContext";
 import { SearchOverlay } from "./SearchOverlay";
+import { useFavorites } from "../../features/favorites/FavoritesContext";
 
 export function LuxuryNavbar() {
   const [isOpen, setIsOpen] = useState(false);
@@ -15,6 +16,7 @@ export function LuxuryNavbar() {
   const { openCart, items } = useCart();
   const { tenant } = useTenant();
   const { user, signOut } = useUserAuth();
+  const { favorites } = useFavorites();
   const navigate = useNavigate();
 
   const navLinks = [
@@ -127,6 +129,22 @@ export function LuxuryNavbar() {
           ) : (
             <Link to="/auth" className="text-typography-primary hover:text-brand-pink transition-colors" title="Sign In">
               <User className="w-5 h-5" strokeWidth={1.5} />
+            </Link>
+          )}
+
+          {/* Favorites List Trigger */}
+          {user && (
+            <Link 
+              to="/orders?tab=favorites"
+              className="text-typography-primary hover:text-brand-pink transition-colors relative"
+              title="My Favorites"
+            >
+              <Heart className="w-5 h-5" strokeWidth={1.5} />
+              {favorites.length > 0 && (
+                <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-brand-pink text-white text-[8px] font-bold rounded-full flex items-center justify-center animate-pulse">
+                  {favorites.length}
+                </span>
+              )}
             </Link>
           )}
 
