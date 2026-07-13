@@ -93,9 +93,10 @@ export function OrdersPage() {
   async function updateOrderStatus(orderId: string, newStatus: Order['status']) {
     if (!canEdit) return;
 
-    const statusLabel = selectedOrder?.delivery_method === 'pickup' && newStatus === 'shipped' 
+    const isPickup = selectedOrder?.delivery_method?.toLowerCase().trim() === 'pickup';
+    const statusLabel = isPickup && newStatus === 'shipped' 
       ? 'ready for pick up' 
-      : selectedOrder?.delivery_method === 'pickup' && newStatus === 'completed'
+      : isPickup && newStatus === 'completed'
       ? 'picked up / completed'
       : newStatus.replace('_', ' ');
 
@@ -108,7 +109,7 @@ export function OrdersPage() {
         .update({ 
           status: newStatus, 
           notes: notes.trim() || null,
-          pickup_location: selectedOrder?.delivery_method === 'pickup' ? pickupLocation.trim() || null : null
+          pickup_location: selectedOrder?.delivery_method?.toLowerCase().trim() === 'pickup' ? pickupLocation.trim() || null : null
         })
         .eq('id', orderId);
 
@@ -119,13 +120,13 @@ export function OrdersPage() {
         ...o, 
         status: newStatus, 
         notes: notes.trim() || null,
-        pickup_location: o.delivery_method === 'pickup' ? pickupLocation.trim() || null : null
+        pickup_location: o.delivery_method?.toLowerCase().trim() === 'pickup' ? pickupLocation.trim() || null : null
       } : o));
       setSelectedOrder(prev => prev ? { 
         ...prev, 
         status: newStatus, 
         notes: notes.trim() || null,
-        pickup_location: prev.delivery_method === 'pickup' ? pickupLocation.trim() || null : null
+        pickup_location: prev.delivery_method?.toLowerCase().trim() === 'pickup' ? pickupLocation.trim() || null : null
       } : null);
       showSuccess(`Order status updated to: ${newStatus.replace('_', ' ')}`);
     } catch (err: any) {
@@ -555,7 +556,7 @@ export function OrdersPage() {
                           disabled={!canShip}
                           className="flex items-center justify-center gap-1 bg-[#fb7a90] hover:bg-[#fb7a90]/90 disabled:opacity-20 disabled:hover:bg-[#fb7a90] disabled:cursor-not-allowed text-white rounded-xl py-2 text-xs font-semibold tracking-wider active:scale-[0.98] disabled:active:scale-100 transition-all"
                         >
-                          {selectedOrder.delivery_method === 'pickup' ? (
+                          {selectedOrder.delivery_method?.toLowerCase().trim() === 'pickup' ? (
                             <>
                               <Store className="w-3.5 h-3.5" /> Ready for Pick Up
                             </>
@@ -570,7 +571,7 @@ export function OrdersPage() {
                           disabled={!canComplete}
                           className="flex items-center justify-center gap-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-20 disabled:hover:bg-emerald-500 disabled:cursor-not-allowed text-white rounded-xl py-2 text-xs font-semibold tracking-wider active:scale-[0.98] disabled:active:scale-100 transition-all"
                         >
-                          <CheckCircle className="w-3.5 h-3.5" /> {selectedOrder.delivery_method === 'pickup' ? 'Mark Picked Up' : 'Complete'}
+                          <CheckCircle className="w-3.5 h-3.5" /> {selectedOrder.delivery_method?.toLowerCase().trim() === 'pickup' ? 'Mark Picked Up' : 'Complete'}
                         </button>
                         <button
                           onClick={() => updateOrderStatus(selectedOrder.id, 'cancelled')}

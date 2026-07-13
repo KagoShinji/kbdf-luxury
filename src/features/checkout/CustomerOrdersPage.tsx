@@ -473,7 +473,7 @@ export function CustomerOrdersPage() {
 
   // Timeline helpers
   const getStepsForOrder = (order: Order) => {
-    const isPickup = order.delivery_method === 'pickup';
+    const isPickup = order.delivery_method?.toLowerCase().trim() === 'pickup';
     return [
       { key: 'pending_verification', label: 'Ordered' },
       { key: 'verified', label: 'Paid' },
@@ -629,9 +629,9 @@ export function CustomerOrdersPage() {
                           <div className="text-right">
                             <span className="font-bold text-sm text-typography-primary block">{currencySymbol}{order.total.toLocaleString()}</span>
                             <span className={`px-2 py-0.5 text-[10px] rounded-full border uppercase font-bold tracking-wider ${getBadgeStyle(order.status)}`}>
-                              {order.delivery_method === 'pickup' && order.status === 'shipped' 
+                              {order.delivery_method?.toLowerCase().trim() === 'pickup' && order.status === 'shipped' 
                                 ? 'Ready for Pick Up' 
-                                : order.delivery_method === 'pickup' && order.status === 'completed'
+                                : order.delivery_method?.toLowerCase().trim() === 'pickup' && order.status === 'completed'
                                 ? 'Picked Up'
                                 : order.status.replace('_', ' ')}
                             </span>
@@ -693,9 +693,9 @@ export function CustomerOrdersPage() {
                               </h4>
                               <div>
                                 <p className="font-semibold capitalize font-serif">
-                                  {order.delivery_method === 'pickup' ? 'Store Pick Up' : `${order.delivery_method} Delivery`}
+                                  {order.delivery_method?.toLowerCase().trim() === 'pickup' ? 'Store Pick Up' : `${order.delivery_method} Delivery`}
                                 </p>
-                                {order.delivery_method === 'pickup' ? (
+                                {order.delivery_method?.toLowerCase().trim() === 'pickup' ? (
                                   <div className="text-typography-muted space-y-1 mt-2 bg-surface-offWhite p-3 rounded-2xl border border-surface-light">
                                     <strong className="block text-[9px] uppercase tracking-wider text-typography-muted">Pick Up Location Address:</strong>
                                     <p className="font-sans text-typography-primary">

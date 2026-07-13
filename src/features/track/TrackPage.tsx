@@ -95,7 +95,7 @@ export function TrackPage() {
     }
   };
 
-  const isPickup = order?.delivery_method === 'pickup';
+  const isPickup = order?.delivery_method?.toLowerCase().trim() === 'pickup';
 
   // Timeline Helper
   const steps = [
@@ -257,12 +257,12 @@ export function TrackPage() {
                   </div>
                   <div>
                     <strong className="block text-[10px] uppercase text-typography-muted mb-0.5">
-                      {order.delivery_method === 'pickup' ? 'Pick Up Location' : 'Shipping Route'}
+                      {order.delivery_method?.toLowerCase().trim() === 'pickup' ? 'Pick Up Location' : 'Shipping Route'}
                     </strong>
                     <p className="font-semibold capitalize">
-                      {order.delivery_method === 'pickup' ? 'Store Pick Up' : `${order.delivery_method} Delivery`}
+                      {order.delivery_method?.toLowerCase().trim() === 'pickup' ? 'Store Pick Up' : `${order.delivery_method} Delivery`}
                     </p>
-                    {order.delivery_method === 'pickup' ? (
+                    {order.delivery_method?.toLowerCase().trim() === 'pickup' ? (
                       <div className="mt-2 text-xs text-typography-muted bg-surface-offWhite p-3 rounded-2xl border border-surface-light space-y-1">
                         <strong className="block text-[9px] uppercase tracking-wider text-typography-muted">Address:</strong>
                         <p className="font-sans text-typography-primary">
