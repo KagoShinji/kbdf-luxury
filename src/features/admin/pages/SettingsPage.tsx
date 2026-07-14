@@ -2,14 +2,40 @@ import { useState, useEffect } from 'react';
 import { useAdminUser } from '../hooks/useAdminUser';
 import { usePermissions } from '../hooks/usePermissions';
 import { supabase } from '../../../lib/supabase/supabaseClient';
-import { Save, AlertCircle, Layout, PhoneCall, Image as ImageIcon, Settings } from 'lucide-react';
+import { Save, AlertCircle, Layout, PhoneCall, Image as ImageIcon, Settings, Truck } from 'lucide-react';
 import { ImageUploadInput } from '../components/ImageUploadInput';
+import { fetchProvinces } from '../../cart/locationData';
+import type { PSGCLocation } from '../../cart/locationData';
 
 export function SettingsPage() {
   const { tenant } = useAdminUser();
   const { canEdit } = usePermissions('settings');
 
-  const [activeTab, setActiveTab] = useState<'branding' | 'contact' | 'hero' | 'homepage'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'contact' | 'hero' | 'homepage' | 'shipping'>('branding');
+
+  // Shipping Settings State
+  interface ShippingRate {
+    id: string;
+    name: string;
+    rate: number;
+    base_weight: number;
+    extra_weight_rate: number;
+    provinces: string[];
+  }
+  const [defaultRate, setDefaultRate] = useState(150);
+  const [defaultBaseWeight, setDefaultBaseWeight] = useState(1.0);
+  const [defaultExtraWeightRate, setDefaultExtraWeightRate] = useState(50);
+  const [freeShippingEnabled, setFreeShippingEnabled] = useState(true);
+  const [freeShippingMinAmount, setFreeShippingMinAmount] = useState(5000);
+  const [shippingRates, setShippingRates] = useState<ShippingRate[]>([]);
+  
+  // Helpers for editing custom rates
+  const [provincesList, setProvincesList] = useState<PSGCLocation[]>([]);
+  const [newRateName, setNewRateName] = useState('');
+  const [newRateValue, setNewRateValue] = useState(0);
+  const [newRateBaseWeight, setNewRateBaseWeight] = useState(1.0);
+  const [newRateExtraWeightRate, setNewRateExtraWeightRate] = useState(50);
+  const [newRateProvinces, setNewRateProvinces] = useState<string[]>([]);
 
   // Tab 1: Branding
   const [name, setName] = useState('');
@@ -112,6 +138,15 @@ export function SettingsPage() {
       setSatHours(hours.saturday || '10:00 AM - 10:00 PM');
       setSunHours(hours.sunday || '11:00 AM - 8:00 PM');
 
+      // Shipping Settings
+      const shipping = settings.shipping || {};
+      setDefaultRate(shipping.default_rate !== undefined ? shipping.default_rate : 150);
+      setDefaultBaseWeight(shipping.default_base_weight !== undefined ? shipping.default_base_weight : 1.0);
+      setDefaultExtraWeightRate(shipping.default_extra_weight_rate !== undefined ? shipping.default_extra_weight_rate : 50);
+      setFreeShippingEnabled(shipping.free_shipping_enabled !== undefined ? shipping.free_shipping_enabled : true);
+      setFreeShippingMinAmount(shipping.free_shipping_min_amount !== undefined ? shipping.free_shipping_min_amount : 5000);
+      setShippingRates(shipping.rates || []);
+
       // Homepage Settings
       const homepage = settings.homepage || {};
       setAnnouncementText(homepage.announcement_text || 'Free Shipping for Orders Over $500');
@@ -182,6 +217,13 @@ export function SettingsPage() {
       setSocialImg5(socImgs[4] || 'https://images.unsplash.com/photo-1485968579580-b6d095142e6e?w=400');
     }
   }, [tenant]);
+
+  // Fetch provinces list on mount
+  useEffect(() => {
+    fetchProvinces().then(data => {
+      setProvincesList(data);
+    });
+  }, []);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
@@ -268,8 +310,18 @@ export function SettingsPage() {
               socialImg5.trim(),
             ]
           }
+        },
+        shipping: {
+          default_rate: Number(defaultRate),
+          default_base_weight: Number(defaultBaseWeight),
+          default_extra_weight_rate: Number(defaultExtraWeightRate),
+          free_shipping_enabled: freeShippingEnabled,
+          free_shipping_min_amount: Number(freeShippingMinAmount),
+          rates: shippingRates
         }
       };
+
+      console.log("PAYLOAD BEING SENT TO SUPABASE:", JSON.stringify(storeSettings, null, 2));
 
       const { error } = await supabase
         .from('tenants')
@@ -385,6 +437,17 @@ export function SettingsPage() {
           }`}
         >
           <Layout className="w-4 h-4" /> Homepage Sections
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('shipping')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-medium text-xs uppercase tracking-wider transition-all whitespace-nowrap ${
+            activeTab === 'shipping'
+              ? 'border-[#fb7a90] text-[#fb7a90]'
+              : 'border-transparent text-white/50 hover:text-white'
+          }`}
+        >
+          <Truck className="w-4 h-4" /> Shipping Rates
         </button>
       </div>
 
@@ -918,6 +981,281 @@ export function SettingsPage() {
                   <ImageUploadInput value={socialImg5} onChange={setSocialImg5} tenantId={tenantId} placeholder="Post 5 URL" />
                 </div>
               </div>
+            </div>
+
+          </div>
+        )}
+
+        {/* TAB 5: SHIPPING RATES */}
+        {activeTab === 'shipping' && (
+          <div className="space-y-6">
+            
+            {/* General Shipping Settings */}
+            <div className="bg-[#111827] border border-white/5 p-5 rounded-2xl space-y-4">
+              <h3 className="text-white font-semibold text-sm border-b border-white/5 pb-2">General Shipping Configurations</h3>
+              
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Default Shipping Fee ({currencySymbol})</label>
+                  <input 
+                    type="number" 
+                    value={defaultRate} 
+                    onChange={e => setDefaultRate(Number(e.target.value))} 
+                    disabled={!canEdit} 
+                    placeholder="150" 
+                    className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white" 
+                  />
+                  <p className="text-[10px] text-white/40">This rate applies if the customer selects an address outside of custom defined rates.</p>
+
+                  <div className="grid grid-cols-2 gap-3 mt-2 border-t border-white/5 pt-3">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-white/65 text-[10px] font-semibold uppercase">Base Weight Limit (kg)</label>
+                      <input 
+                        type="number" 
+                        value={defaultBaseWeight} 
+                        onChange={e => setDefaultBaseWeight(Number(e.target.value))} 
+                        disabled={!canEdit}
+                        min="0"
+                        step="0.1"
+                        placeholder="1.0" 
+                        className="bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-xs text-white" 
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-white/65 text-[10px] font-semibold uppercase">Extra Weight Fee (₱ / kg)</label>
+                      <input 
+                        type="number" 
+                        value={defaultExtraWeightRate} 
+                        onChange={e => setDefaultExtraWeightRate(Number(e.target.value))} 
+                        disabled={!canEdit}
+                        min="0"
+                        placeholder="50" 
+                        className="bg-[#0f1117] border border-white/10 rounded-lg px-3 py-2 text-xs text-white" 
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col justify-center gap-2 border border-white/5 p-4 rounded-xl">
+                  <label className="flex items-center gap-2 text-white text-xs font-bold uppercase tracking-wider cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={freeShippingEnabled} 
+                      onChange={e => setFreeShippingEnabled(e.target.checked)} 
+                      disabled={!canEdit} 
+                      className="rounded bg-[#0f1117] border-white/10 text-brand-pink focus:ring-brand-pink w-4 h-4" 
+                    />
+                    Enable Free Shipping Threshold
+                  </label>
+                  {freeShippingEnabled && (
+                    <div className="mt-2 flex flex-col gap-1.5">
+                      <label className="text-white/60 text-[10px] font-medium uppercase">Minimum Order Total for Free Shipping ({currencySymbol})</label>
+                      <input 
+                        type="number" 
+                        value={freeShippingMinAmount} 
+                        onChange={e => setFreeShippingMinAmount(Number(e.target.value))} 
+                        disabled={!canEdit} 
+                        placeholder="5000" 
+                        className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white" 
+                      />
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Custom Location Rates */}
+            <div className="bg-[#111827] border border-white/5 p-5 rounded-2xl space-y-4">
+              <h3 className="text-white font-semibold text-sm border-b border-white/5 pb-2">Custom Region & Province Rates</h3>
+              
+              {/* Existing Custom Rates */}
+              <div className="space-y-3">
+                {shippingRates.length === 0 ? (
+                  <p className="text-xs text-white/30 italic">No custom location rates defined. All shipments will use the default shipping fee.</p>
+                ) : (
+                  <div className="grid grid-cols-1 gap-3">
+                    {shippingRates.map((rate, idx) => (
+                      <div key={rate.id || idx} className="flex flex-col sm:flex-row sm:items-center justify-between border border-white/5 bg-[#0f1117]/40 p-4 rounded-xl gap-4">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-white font-semibold text-sm">{rate.name}</span>
+                            <span className="bg-brand-pink/10 text-brand-pink text-[10px] font-semibold px-2 py-0.5 rounded-full">
+                              Base: {currencySymbol}{rate.rate}
+                            </span>
+                            <span className="bg-white/5 text-white/60 text-[10px] px-2 py-0.5 rounded-full">
+                              Up to {rate.base_weight !== undefined ? rate.base_weight : 1.0}kg
+                            </span>
+                            <span className="bg-white/5 text-white/60 text-[10px] px-2 py-0.5 rounded-full">
+                              +{currencySymbol}{rate.extra_weight_rate !== undefined ? rate.extra_weight_rate : 50}/extra kg
+                            </span>
+                          </div>
+                          <p className="text-[10px] text-white/40 mt-1 max-w-xl line-clamp-2">
+                            Provinces: {rate.provinces.join(', ')}
+                          </p>
+                        </div>
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => setShippingRates(shippingRates.filter(r => r.id !== rate.id))}
+                            className="text-red-400 hover:text-red-500 font-bold text-xs uppercase tracking-wider border border-red-500/20 hover:border-red-500/50 px-3 py-1.5 rounded-lg transition-all"
+                          >
+                            Delete
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Add New Rate Form */}
+              {canEdit && (
+                <div className="border-t border-white/5 pt-4 space-y-4">
+                  <h4 className="text-white font-medium text-xs uppercase tracking-wider">Add Custom Location Rate</h4>
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="flex flex-col gap-2">
+                      <label className="text-white/60 text-[10px] font-medium uppercase">Rate Name (e.g. Visayas)</label>
+                      <input 
+                        type="text" 
+                        value={newRateName} 
+                        onChange={e => setNewRateName(e.target.value)} 
+                        placeholder="Visayas" 
+                        className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white" 
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-white/60 text-[10px] font-medium uppercase">Base Rate Amount ({currencySymbol})</label>
+                      <input 
+                        type="number" 
+                        value={newRateValue} 
+                        onChange={e => setNewRateValue(Number(e.target.value))} 
+                        placeholder="200" 
+                        className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white" 
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-white/60 text-[10px] font-medium uppercase">Base Weight Limit (kg)</label>
+                      <input 
+                        type="number" 
+                        value={newRateBaseWeight} 
+                        onChange={e => setNewRateBaseWeight(Number(e.target.value))} 
+                        min="0"
+                        step="0.1"
+                        placeholder="1.0" 
+                        className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white" 
+                      />
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <label className="text-white/60 text-[10px] font-medium uppercase">Extra Weight Fee (₱/kg)</label>
+                      <input 
+                        type="number" 
+                        value={newRateExtraWeightRate} 
+                        onChange={e => setNewRateExtraWeightRate(Number(e.target.value))} 
+                        min="0"
+                        placeholder="50" 
+                        className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white" 
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-2">
+                    <label className="text-white/60 text-[10px] font-medium uppercase">Select Provinces for this Rate</label>
+                    
+                    {/* Quick Selection Regions */}
+                    <div className="flex flex-wrap gap-2 pb-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const luzon = ["Abra", "Albay", "Aurora", "Bataan", "Batanes", "Batangas", "Benguet", "Bulacan", "Cagayan", "Camarines Norte", "Camarines Sur", "Catanduanes", "Cavite", "Ifugao", "Ilocos Norte", "Ilocos Sur", "Isabela", "Kalinga", "La Union", "Laguna", "Marinduque", "Masbate", "Mountain Province", "Nueva Ecija", "Nueva Vizcaya", "Occidental Mindoro", "Oriental Mindoro", "Palawan", "Pampanga", "Pangasinan", "Quezon", "Quirino", "Rizal", "Romblon", "Sorsogon", "Tarlac", "Zambales"];
+                          setNewRateProvinces([...new Set([...newRateProvinces, ...luzon])]);
+                        }}
+                        className="bg-white/5 hover:bg-white/10 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border border-white/10 transition-all"
+                      >
+                        + Add All Luzon
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const visayas = ["Aklan", "Antique", "Biliran", "Bohol", "Capiz", "Cebu", "Eastern Samar", "Guimaras", "Iloilo", "Leyte", "Negros Occidental", "Negros Oriental", "Northern Samar", "Samar", "Siquijor", "Southern Leyte"];
+                          setNewRateProvinces([...new Set([...newRateProvinces, ...visayas])]);
+                        }}
+                        className="bg-white/5 hover:bg-white/10 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border border-white/10 transition-all"
+                      >
+                        + Add All Visayas
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const mindanao = ["Agusan del Norte", "Agusan del Sur", "Basilan", "Bukidnon", "Camiguin", "Cotabato", "Davao de Oro", "Davao del Norte", "Davao del Sur", "Davao Occidental", "Davao Oriental", "Dinagat Islands", "Lanao del Norte", "Lanao del Sur", "Maguindanao", "Misamis Occidental", "Misamis Oriental", "Sarangani", "South Cotabato", "Sultan Kudarat", "Sulu", "Surigao del Norte", "Surigao del Sur", "Tawi-Tawi", "Zamboanga del Norte", "Zamboanga del Sur", "Zamboanga Sibugay"];
+                          setNewRateProvinces([...new Set([...newRateProvinces, ...mindanao])]);
+                        }}
+                        className="bg-white/5 hover:bg-white/10 text-white text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border border-white/10 transition-all"
+                      >
+                        + Add All Mindanao
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setNewRateProvinces([])}
+                        className="bg-red-500/10 hover:bg-red-500/20 text-red-400 text-[10px] font-bold uppercase tracking-wider px-3 py-1.5 rounded-lg border border-red-500/20 transition-all"
+                      >
+                        Clear Selection
+                      </button>
+                    </div>
+
+                    {/* Provinces Checklist */}
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 max-h-48 overflow-y-auto border border-white/10 rounded-xl p-3 bg-[#0f1117] no-scrollbar">
+                      {provincesList.map(prov => {
+                        const checked = newRateProvinces.includes(prov.name);
+                        return (
+                          <div key={prov.code} className="flex items-center gap-2">
+                            <input 
+                              id={`prov-${prov.code}`}
+                              type="checkbox" 
+                              checked={checked} 
+                              onChange={() => {
+                                if (checked) {
+                                  setNewRateProvinces(newRateProvinces.filter(p => p !== prov.name));
+                                } else {
+                                  setNewRateProvinces([...newRateProvinces, prov.name]);
+                                }
+                              }}
+                              className="rounded bg-[#0f1117] border-white/10 text-brand-pink focus:ring-brand-pink w-3.5 h-3.5"
+                            />
+                            <label htmlFor={`prov-${prov.code}`} className="text-xs text-white/70 hover:text-white cursor-pointer select-none">
+                              {prov.name}
+                            </label>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!newRateName.trim() || newRateValue < 0 || newRateProvinces.length === 0}
+                    onClick={() => {
+                      const newRate = {
+                        id: typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : Math.random().toString(36).substring(2, 9),
+                        name: newRateName.trim(),
+                        rate: newRateValue,
+                        base_weight: newRateBaseWeight,
+                        extra_weight_rate: newRateExtraWeightRate,
+                        provinces: newRateProvinces
+                      };
+                      setShippingRates([...shippingRates, newRate]);
+                      setNewRateName('');
+                      setNewRateValue(0);
+                      setNewRateBaseWeight(1.0);
+                      setNewRateExtraWeightRate(50);
+                      setNewRateProvinces([]);
+                    }}
+                    className="bg-brand-pink hover:bg-brand-pink/90 text-white rounded-xl px-4 py-2 text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-40"
+                  >
+                    Add Rate to Policy
+                  </button>
+                </div>
+              )}
             </div>
 
           </div>

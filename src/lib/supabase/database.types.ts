@@ -168,6 +168,7 @@ export interface Database {
           leeway_enabled: boolean;
           leeway_down_payment_required: boolean;
           leeway_down_payment_amount: number;
+          weight: number;
           created_at: string;
           updated_at: string;
         };
@@ -191,6 +192,7 @@ export interface Database {
           leeway_enabled?: boolean;
           leeway_down_payment_required?: boolean;
           leeway_down_payment_amount?: number;
+          weight?: number;
           created_at?: string;
           updated_at?: string;
         };

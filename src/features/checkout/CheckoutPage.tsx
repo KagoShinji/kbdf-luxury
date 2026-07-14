@@ -2,7 +2,8 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useCart } from '../cart/CartContext';
 import { useTenant } from '../../core/context/TenantContext';
 import { supabase, TENANT_ID } from '../../lib/supabase/supabaseClient';
-import { LOCATION_PRESETS } from '../cart/locationData';
+import { fetchProvinces, fetchCities, fetchBarangays } from '../cart/locationData';
+import type { PSGCLocation } from '../cart/locationData';
 import { ImageUploadInput } from '../admin/components/ImageUploadInput';
 import { useUserAuth } from '../../core/context/UserAuthContext';
 import { useNotification } from '../../core/context/NotificationContext';
@@ -132,6 +133,14 @@ export function CheckoutPage() {
   const [streetAddress, setStreetAddress] = useState('');
   const [landmark, setLandmark] = useState('');
 
+  // PSGC Dynamic Locations
+  const [provincesList, setProvincesList] = useState<PSGCLocation[]>([]);
+  const [citiesList, setCitiesList] = useState<PSGCLocation[]>([]);
+  const [barangaysList, setBarangaysList] = useState<string[]>([]);
+  const [selectedProvinceCode, setSelectedProvinceCode] = useState('');
+  const [selectedCityCode, setSelectedCityCode] = useState('');
+  const [loadingLocations, setLoadingLocations] = useState(false);
+
   // Custom (Other) Text inputs
   const [customProvince, setCustomProvince] = useState('');
   const [customCity, setCustomCity] = useState('');
@@ -190,6 +199,44 @@ export function CheckoutPage() {
       }
     };
   }, [reservationExpiresAt, tenantId, sessionId]);
+
+
+  // Fetch initial provinces on mount
+  useEffect(() => {
+    const loadProvinces = async () => {
+      setLoadingLocations(true);
+      const data = await fetchProvinces();
+      setProvincesList(data);
+      setLoadingLocations(false);
+    };
+    loadProvinces();
+  }, []);
+
+  // Synchronize province name to code and fetch cities
+  useEffect(() => {
+    if (provincesList.length > 0 && province && province !== 'Other' && !selectedProvinceCode) {
+      const match = provincesList.find(p => p.name.toLowerCase() === province.toLowerCase());
+      if (match) {
+        setSelectedProvinceCode(match.code);
+        fetchCities(match.code).then(citiesData => {
+          setCitiesList(citiesData);
+        });
+      }
+    }
+  }, [provincesList, province, selectedProvinceCode]);
+
+  // Synchronize city name to code and fetch barangays
+  useEffect(() => {
+    if (citiesList.length > 0 && city && !selectedCityCode) {
+      const match = citiesList.find(c => c.name.toLowerCase() === city.toLowerCase());
+      if (match) {
+        setSelectedCityCode(match.code);
+        fetchBarangays(match.code).then(brgys => {
+          setBarangaysList(brgys);
+        });
+      }
+    }
+  }, [citiesList, city, selectedCityCode]);
 
   // Load draft from localStorage on mount/user change
   useEffect(() => {
@@ -489,31 +536,106 @@ export function CheckoutPage() {
   };
 
   // Handle province change
-  const handleProvinceChange = (val: string) => {
-    setProvince(val);
-    setCity('');
-    setBarangay('');
+  const handleProvinceChange = async (code: string) => {
+    if (!code) {
+      setProvince('');
+      setSelectedProvinceCode('');
+      setCitiesList([]);
+      setCity('');
+      setSelectedCityCode('');
+      setBarangaysList([]);
+      setBarangay('');
+      return;
+    }
+
+    if (code === 'Other') {
+      setProvince('Other');
+      setSelectedProvinceCode('Other');
+      setCitiesList([]);
+      setCity('');
+      setSelectedCityCode('');
+      setBarangaysList([]);
+      setBarangay('');
+      return;
+    }
+
+    const prov = provincesList.find(p => p.code === code);
+    if (prov) {
+      setProvince(prov.name);
+      setSelectedProvinceCode(code);
+      setCity('');
+      setSelectedCityCode('');
+      setBarangaysList([]);
+      setBarangay('');
+
+      const citiesData = await fetchCities(code);
+      setCitiesList(citiesData);
+    }
   };
 
   // Handle city change
-  const handleCityChange = (val: string) => {
-    setCity(val);
-    setBarangay('');
+  const handleCityChange = async (code: string) => {
+    if (!code) {
+      setCity('');
+      setSelectedCityCode('');
+      setBarangaysList([]);
+      setBarangay('');
+      return;
+    }
+
+    const c = citiesList.find(item => item.code === code);
+    if (c) {
+      setCity(c.name);
+      setSelectedCityCode(code);
+      setBarangay('');
+
+      const brgys = await fetchBarangays(code);
+      setBarangaysList(brgys);
+    }
   };
-
-  // Get active Cities based on selected Province
-  const activeCities = province && LOCATION_PRESETS[province] 
-    ? Object.keys(LOCATION_PRESETS[province].cities) 
-    : [];
-
-  // Get active Barangays based on selected City
-  const activeBarangays = province && city && LOCATION_PRESETS[province]?.cities[city]
-    ? LOCATION_PRESETS[province].cities[city]
-    : [];
 
   const finalProvince = deliveryMethod === 'pickup' ? 'Store Pick-up' : (province === 'Other' ? customProvince : province);
   const finalCity = deliveryMethod === 'pickup' ? 'Store Pick-up' : (province === 'Other' ? customCity : city);
   const finalBarangay = deliveryMethod === 'pickup' ? 'Store Pick-up' : (province === 'Other' ? customBarangay : barangay);
+
+  // Dynamic Shipping Fee Calculations
+  const shippingSettings = (tenant?.store_settings as any)?.shipping || {};
+
+  const calculateShippingFee = () => {
+    if (deliveryMethod === 'pickup') return 0;
+    
+    // Check for free shipping threshold
+    if (shippingSettings.free_shipping_enabled && cartTotal >= (shippingSettings.free_shipping_min_amount || 0)) {
+      return 0;
+    }
+
+    // Sum up the total weight of the items in the cart
+    const totalCartWeight = items.reduce((sum, item) => sum + (Number(item.weight) || 0) * item.quantity, 0);
+    
+    // Find matching custom rate by province or fallback to default rate
+    const provName = province === 'Other' ? customProvince : province;
+    let baseRate = Number(shippingSettings.default_rate !== undefined ? shippingSettings.default_rate : 150);
+    let baseWeight = Number(shippingSettings.default_base_weight !== undefined ? shippingSettings.default_base_weight : 1.0);
+    let extraWeightRate = Number(shippingSettings.default_extra_weight_rate !== undefined ? shippingSettings.default_extra_weight_rate : 50);
+
+    if (provName) {
+      const match = (shippingSettings.rates || []).find((r: any) => 
+        (r.provinces || []).some((p: string) => p.toLowerCase() === provName.toLowerCase())
+      );
+      if (match) {
+        baseRate = Number(match.rate);
+        baseWeight = Number(match.base_weight !== undefined ? match.base_weight : 1.0);
+        extraWeightRate = Number(match.extra_weight_rate !== undefined ? match.extra_weight_rate : 50);
+      }
+    }
+
+    const excessWeight = Math.max(0, totalCartWeight - baseWeight);
+    const surcharge = Math.ceil(excessWeight) * extraWeightRate;
+    return baseRate + surcharge;
+  };
+
+  const shippingFee = calculateShippingFee();
+  const checkoutTotal = Math.max(0, cartTotal - discountAmt + shippingFee);
 
   // Selected Payment Method Objects
   const selectedPaymentMethod = paymentMethods.find(m => m.id === selectedMethodId);
@@ -614,8 +736,8 @@ export function CheckoutPage() {
           : (selectedMethodId === 'walk_in' ? 'walk_in' : (selectedPaymentMethod?.type || 'custom')),
         proof_of_payment_url: proofOfPaymentUrl || null,
         subtotal: cartTotal,
-        shipping_fee: 0,
-        total: Math.max(0, cartTotal - discountAmt),
+        shipping_fee: shippingFee,
+        total: checkoutTotal,
         promo_code_id: appliedPromo ? appliedPromo.id : null,
         discount_amount: discountAmt,
         status: 'pending_verification',
@@ -908,7 +1030,7 @@ export function CheckoutPage() {
                 {showMobileSummary ? "Hide Order Summary" : "Show Order Summary"}
                 <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${showMobileSummary ? 'rotate-180' : ''}`} />
               </span>
-              <span>{currencySymbol}{Math.max(0, cartTotal - discountAmt).toLocaleString()}</span>
+              <span>{currencySymbol}{checkoutTotal.toLocaleString()}</span>
             </button>
             
             {showMobileSummary && (
@@ -997,12 +1119,14 @@ export function CheckoutPage() {
                       
                       {/* Province Selector */}
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-[10px] font-bold uppercase text-typography-primary">Province *</label>
-                        <select value={province} onChange={e => handleProvinceChange(e.target.value)} className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink">
+                        <label className="text-[10px] font-bold uppercase text-typography-primary">
+                          Province * {loadingLocations && <span className="text-[9px] lowercase text-brand-pink font-normal">(loading...)</span>}
+                        </label>
+                        <select value={selectedProvinceCode || (province === 'Other' ? 'Other' : '')} onChange={e => handleProvinceChange(e.target.value)} className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink">
                           <option value="">Select Province</option>
-                          <option value="Metro Manila">Metro Manila</option>
-                          <option value="Cebu">Cebu</option>
-                          <option value="Davao">Davao</option>
+                          {provincesList.map(p => (
+                            <option key={p.code} value={p.code}>{p.name}</option>
+                          ))}
                           <option value="Other">Other (Custom)</option>
                         </select>
                       </div>
@@ -1013,9 +1137,11 @@ export function CheckoutPage() {
                         {province === 'Other' ? (
                           <input type="text" value={customCity} onChange={e => setCustomCity(e.target.value)} placeholder="Cagayan de Oro" className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink" />
                         ) : (
-                          <select value={city} onChange={e => handleCityChange(e.target.value)} disabled={!province} className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink disabled:opacity-50">
+                          <select value={selectedCityCode} onChange={e => handleCityChange(e.target.value)} disabled={!province} className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink disabled:opacity-50">
                             <option value="">Select City</option>
-                            {activeCities.map(c => <option key={c} value={c}>{c}</option>)}
+                            {citiesList.map(c => (
+                              <option key={c.code} value={c.code}>{c.name}</option>
+                            ))}
                           </select>
                         )}
                       </div>
@@ -1028,7 +1154,9 @@ export function CheckoutPage() {
                         ) : (
                           <select value={barangay} onChange={e => setBarangay(e.target.value)} disabled={!city} className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink disabled:opacity-50">
                             <option value="">Select Barangay</option>
-                            {activeBarangays.map(b => <option key={b} value={b}>{b}</option>)}
+                            {barangaysList.map(b => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
                           </select>
                         )}
                       </div>
@@ -1531,11 +1659,21 @@ export function CheckoutPage() {
 
                 <div className="flex justify-between">
                   <span className="text-typography-muted">Delivery</span>
-                  <span className="font-semibold text-brand-pink uppercase">Free</span>
+                  <span className="font-semibold text-typography-primary">
+                    {deliveryMethod === 'pickup' ? (
+                      <span className="text-brand-pink uppercase font-semibold">Store Pick-up</span>
+                    ) : shippingFee === 0 ? (
+                      <span className="text-emerald-600 font-semibold">
+                        Free {shippingSettings.free_shipping_min_amount && `(Over ${currencySymbol}${shippingSettings.free_shipping_min_amount})`}
+                      </span>
+                    ) : (
+                      `${currencySymbol}${shippingFee.toLocaleString()}`
+                    )}
+                  </span>
                 </div>
                 <div className="flex justify-between text-sm font-bold pt-4 border-t border-surface-light">
                   <span>Total</span>
-                  <span className="text-typography-primary">{currencySymbol}{Math.max(0, cartTotal - discountAmt).toLocaleString()}</span>
+                  <span className="text-typography-primary">{currencySymbol}{checkoutTotal.toLocaleString()}</span>
                 </div>
 
                 {/* Steps Action Buttons (placed below item summary) */}
@@ -1616,7 +1754,7 @@ export function CheckoutPage() {
           <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-surface-light p-4 z-40 flex flex-col gap-2 safe-bottom shadow-[0_-8px_30px_rgba(0,0,0,0.08)]">
             <div className="flex items-center justify-between text-xs font-bold px-1 mb-1">
               <span className="text-typography-muted uppercase tracking-wider text-[9px]">Total Order Amount:</span>
-              <span className="text-sm font-black text-brand-pink">{currencySymbol}{Math.max(0, cartTotal - discountAmt).toLocaleString()}</span>
+              <span className="text-sm font-black text-brand-pink">{currencySymbol}{checkoutTotal.toLocaleString()}</span>
             </div>
             <div className="flex gap-3">
               {step > 1 && (

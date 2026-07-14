@@ -31,6 +31,7 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
   const [categories, setCategories] = useState<Category[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+  const [weight, setWeight] = useState(0.0);
 
   const [hasMultipleSizes, setHasMultipleSizes] = useState(false);
 
@@ -62,6 +63,7 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
         setLeewayEnabled((item as any).leeway_enabled || false);
         setLeewayDownPaymentRequired((item as any).leeway_down_payment_required || false);
         setLeewayDownPaymentAmount(Number((item as any).leeway_down_payment_amount || 0));
+        setWeight(Number((item as any).weight || 0.0));
       } else {
         setTitle('');
         setDescription('');
@@ -79,6 +81,7 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
         setLeewayEnabled(false);
         setLeewayDownPaymentRequired(false);
         setLeewayDownPaymentAmount(0);
+        setWeight(0.0);
       }
       setSizeInput('');
       setSizeQuantityInput(1);
@@ -164,6 +167,7 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
         leeway_enabled: leewayEnabled,
         leeway_down_payment_required: leewayDownPaymentRequired,
         leeway_down_payment_amount: leewayEnabled && leewayDownPaymentRequired ? leewayDownPaymentAmount : 0,
+        weight: Number(weight),
         is_active: true
       };
 
@@ -293,6 +297,21 @@ export function ItemFormModal({ isOpen, onClose, onSave, item, tenantId }: ItemF
                 min="0"
                 step="0.01"
                 placeholder="3800"
+                className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/20 outline-none focus:border-[#fb7a90]/50 transition-colors"
+              />
+            </div>
+
+            {/* Weight (kg) */}
+            <div className="flex flex-col gap-2">
+              <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Weight (kg) *</label>
+              <input
+                type="number"
+                value={weight || ''}
+                onChange={e => setWeight(Math.max(0, Number(e.target.value)))}
+                required
+                min="0"
+                step="0.01"
+                placeholder="1.0"
                 className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/20 outline-none focus:border-[#fb7a90]/50 transition-colors"
               />
             </div>

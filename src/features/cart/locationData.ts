@@ -28,3 +28,64 @@ export const LOCATION_PRESETS: { [provinceName: string]: ProvinceData } = {
     }
   }
 };
+
+export interface PSGCLocation {
+  code: string;
+  name: string;
+}
+
+export const fetchProvinces = async (): Promise<PSGCLocation[]> => {
+  try {
+    const res = await fetch('https://psgc.gitlab.io/api/provinces.json');
+    if (!res.ok) throw new Error('Failed to fetch provinces');
+    const data = await res.json();
+    const list = data.map((item: any) => ({
+      code: item.code,
+      name: item.name
+    }));
+    // Sort alphabetically
+    list.sort((a: any, b: any) => a.name.localeCompare(b.name));
+    // Prepend Metro Manila (NCR)
+    return [{ code: '130000000', name: 'Metro Manila' }, ...list];
+  } catch (err) {
+    console.error(err);
+    return [{ code: '130000000', name: 'Metro Manila' }];
+  }
+};
+
+export const fetchCities = async (provinceCode: string): Promise<PSGCLocation[]> => {
+  try {
+    let url = '';
+    if (provinceCode === '130000000') {
+      url = 'https://psgc.gitlab.io/api/regions/130000000/cities-municipalities.json';
+    } else {
+      url = `https://psgc.gitlab.io/api/provinces/${provinceCode}/cities-municipalities.json`;
+    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to fetch cities');
+    const data = await res.json();
+    const list = data.map((item: any) => ({
+      code: item.code,
+      name: item.name
+    }));
+    list.sort((a: any, b: any) => a.name.localeCompare(b.name));
+    return list;
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
+};
+
+export const fetchBarangays = async (cityCode: string): Promise<string[]> => {
+  try {
+    const res = await fetch(`https://psgc.gitlab.io/api/cities-municipalities/${cityCode}/barangays.json`);
+    if (!res.ok) throw new Error('Failed to fetch barangays');
+    const data = await res.json();
+    const list = data.map((item: any) => item.name);
+    list.sort();
+    return list;
+  } catch (err) {
+    console.error(err);
+    return [];
+  }
+};

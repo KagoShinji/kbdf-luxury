@@ -12,7 +12,8 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useCart } from "../cart/CartContext";
 import { ImageUploadInput } from "../admin/components/ImageUploadInput";
 import { useFavorites } from "../favorites/FavoritesContext";
-import { LOCATION_PRESETS } from "../cart/locationData";
+import { fetchProvinces, fetchCities, fetchBarangays } from "../cart/locationData";
+import type { PSGCLocation } from "../cart/locationData";
 
 interface OrderItem {
   id: string;
@@ -105,6 +106,14 @@ export function CustomerOrdersPage() {
   const [profileBarangay, setProfileBarangay] = useState('');
   const [profileStreetAddress, setProfileStreetAddress] = useState('');
   const [profileLandmark, setProfileLandmark] = useState('');
+
+  // PSGC Dynamic Locations
+  const [provincesList, setProvincesList] = useState<PSGCLocation[]>([]);
+  const [citiesList, setCitiesList] = useState<PSGCLocation[]>([]);
+  const [barangaysList, setBarangaysList] = useState<string[]>([]);
+  const [selectedProvinceCode, setSelectedProvinceCode] = useState('');
+  const [selectedCityCode, setSelectedCityCode] = useState('');
+  const [loadingLocations, setLoadingLocations] = useState(false);
   const [profileCustomProvince, setProfileCustomProvince] = useState('');
   const [profileCustomCity, setProfileCustomCity] = useState('');
   const [profileCustomBarangay, setProfileCustomBarangay] = useState('');
@@ -152,23 +161,98 @@ export function CustomerOrdersPage() {
     }
   }, [user]);
 
-  const profileCities = profileProvince && LOCATION_PRESETS[profileProvince]
-    ? Object.keys(LOCATION_PRESETS[profileProvince].cities)
-    : [];
+  // Fetch initial provinces on mount
+  useEffect(() => {
+    const loadProvinces = async () => {
+      setLoadingLocations(true);
+      const data = await fetchProvinces();
+      setProvincesList(data);
+      setLoadingLocations(false);
+    };
+    loadProvinces();
+  }, []);
 
-  const profileBarangays = profileProvince && profileCity && LOCATION_PRESETS[profileProvince]?.cities[profileCity]
-    ? LOCATION_PRESETS[profileProvince].cities[profileCity]
-    : [];
+  // Synchronize province name from database to code and fetch cities
+  useEffect(() => {
+    if (provincesList.length > 0 && profileProvince && profileProvince !== 'Other' && !selectedProvinceCode) {
+      const match = provincesList.find(p => p.name.toLowerCase() === profileProvince.toLowerCase());
+      if (match) {
+        setSelectedProvinceCode(match.code);
+        fetchCities(match.code).then(citiesData => {
+          setCitiesList(citiesData);
+        });
+      }
+    }
+  }, [provincesList, profileProvince, selectedProvinceCode]);
 
-  const handleProfileProvinceChange = (val: string) => {
-    setProfileProvince(val);
-    setProfileCity('');
-    setProfileBarangay('');
+  // Synchronize city name from database to code and fetch barangays
+  useEffect(() => {
+    if (citiesList.length > 0 && profileCity && !selectedCityCode) {
+      const match = citiesList.find(c => c.name.toLowerCase() === profileCity.toLowerCase());
+      if (match) {
+        setSelectedCityCode(match.code);
+        fetchBarangays(match.code).then(brgys => {
+          setBarangaysList(brgys);
+        });
+      }
+    }
+  }, [citiesList, profileCity, selectedCityCode]);
+
+  const handleProfileProvinceChange = async (code: string) => {
+    if (!code) {
+      setProfileProvince('');
+      setSelectedProvinceCode('');
+      setCitiesList([]);
+      setProfileCity('');
+      setSelectedCityCode('');
+      setBarangaysList([]);
+      setProfileBarangay('');
+      return;
+    }
+
+    if (code === 'Other') {
+      setProfileProvince('Other');
+      setSelectedProvinceCode('Other');
+      setCitiesList([]);
+      setProfileCity('');
+      setSelectedCityCode('');
+      setBarangaysList([]);
+      setProfileBarangay('');
+      return;
+    }
+
+    const prov = provincesList.find(p => p.code === code);
+    if (prov) {
+      setProfileProvince(prov.name);
+      setSelectedProvinceCode(code);
+      setProfileCity('');
+      setSelectedCityCode('');
+      setBarangaysList([]);
+      setProfileBarangay('');
+
+      const citiesData = await fetchCities(code);
+      setCitiesList(citiesData);
+    }
   };
 
-  const handleProfileCityChange = (val: string) => {
-    setProfileCity(val);
-    setProfileBarangay('');
+  const handleProfileCityChange = async (code: string) => {
+    if (!code) {
+      setProfileCity('');
+      setSelectedCityCode('');
+      setBarangaysList([]);
+      setProfileBarangay('');
+      return;
+    }
+
+    const c = citiesList.find(item => item.code === code);
+    if (c) {
+      setProfileCity(c.name);
+      setSelectedCityCode(code);
+      setProfileBarangay('');
+
+      const brgys = await fetchBarangays(code);
+      setBarangaysList(brgys);
+    }
   };
 
   const handleSaveProfile = async (e: React.FormEvent) => {
@@ -1406,16 +1490,18 @@ export function CustomerOrdersPage() {
                     
                     {/* Province Selector */}
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-[10px] font-bold uppercase text-typography-primary">Province *</label>
+                      <label className="text-[10px] font-bold uppercase text-typography-primary">
+                        Province * {loadingLocations && <span className="text-[9px] lowercase text-brand-pink font-normal">(loading...)</span>}
+                      </label>
                       <select 
-                        value={profileProvince} 
+                        value={selectedProvinceCode || (profileProvince === 'Other' ? 'Other' : '')} 
                         onChange={e => handleProfileProvinceChange(e.target.value)} 
                         className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink"
                       >
                         <option value="">Select Province</option>
-                        <option value="Metro Manila">Metro Manila</option>
-                        <option value="Cebu">Cebu</option>
-                        <option value="Davao">Davao</option>
+                        {provincesList.map(p => (
+                          <option key={p.code} value={p.code}>{p.name}</option>
+                        ))}
                         <option value="Other">Other (Custom)</option>
                       </select>
                     </div>
@@ -1433,13 +1519,15 @@ export function CustomerOrdersPage() {
                         />
                       ) : (
                         <select 
-                          value={profileCity} 
+                          value={selectedCityCode} 
                           onChange={e => handleProfileCityChange(e.target.value)} 
                           disabled={!profileProvince} 
                           className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink disabled:opacity-50"
                         >
                           <option value="">Select City</option>
-                          {profileCities.map(c => <option key={c} value={c}>{c}</option>)}
+                          {citiesList.map(c => (
+                            <option key={c.code} value={c.code}>{c.name}</option>
+                          ))}
                         </select>
                       )}
                     </div>
@@ -1463,7 +1551,9 @@ export function CustomerOrdersPage() {
                           className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink disabled:opacity-50"
                         >
                           <option value="">Select Barangay</option>
-                          {profileBarangays.map(b => <option key={b} value={b}>{b}</option>)}
+                          {barangaysList.map(b => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
                         </select>
                       )}
                     </div>
