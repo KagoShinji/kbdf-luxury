@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { ChevronUp, ChevronDown, Search, ChevronLeft, ChevronRight } from 'lucide-react';
 import { clsx } from 'clsx';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion } from 'framer-motion';
 
 export interface Column<T> {
   key: keyof T | string;

@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
 import { AdminSidebar } from './AdminSidebar';
 import { AdminHeader } from './AdminHeader';
-import { Menu } from 'lucide-react';
 import { useAdminAuth } from '../context/AdminAuthContext';
 
 const PAGE_TITLES: Record<string, string> = {

@@ -6,7 +6,7 @@ interface SplashScreenProps {
 }
 
 export function SplashScreen({ isLoading }: SplashScreenProps) {
-  const { tenant, loading: tenantLoading } = useTenant();
+  const { tenant } = useTenant();
 
   return (
     <AnimatePresence>

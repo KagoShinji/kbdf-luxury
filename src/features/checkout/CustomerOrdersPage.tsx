@@ -1314,7 +1314,7 @@ export function CustomerOrdersPage() {
                         <div className="flex-shrink-0">
                           <input
                             type="checkbox"
-                            disabled={isItemOutOfStock}
+                            disabled={!!isItemOutOfStock}
                             checked={selectedFavIds.includes(fav.item_id)}
                             onChange={() => handleToggleSelect(fav.item_id)}
                             className="w-4 h-4 rounded-none border-typography-primary text-brand-navy focus:ring-0 focus:ring-offset-0 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed mt-2 md:mt-0"
@@ -1358,7 +1358,7 @@ export function CustomerOrdersPage() {
                               <label className="text-[10px] font-bold uppercase text-typography-primary tracking-widest mb-1">Size</label>
                               <div className="relative">
                                 <select
-                                  disabled={isItemOutOfStock}
+                                  disabled={!!isItemOutOfStock}
                                   value={selectedSize}
                                   onChange={(e) => handleSizeChange(fav.item_id, e.target.value)}
                                   className="appearance-none bg-transparent border border-typography-primary rounded-none px-4 py-2.5 text-xs text-typography-primary outline-none focus:border-brand-navy focus:ring-1 focus:ring-brand-navy disabled:opacity-30 disabled:border-surface-light min-w-[140px] transition-all cursor-pointer"
