@@ -408,7 +408,6 @@ export function CheckoutPage() {
   const [leewaySchedule, setLeewaySchedule] = useState<'weekly' | 'monthly' | 'flexible'>('weekly');
   const [leewayDownPayment, setLeewayDownPayment] = useState<number>(0);
   const [leewayPaymentMethodId, setLeewayPaymentMethodId] = useState<string>('walk_in');
-  const [leewayRequestStatus, setLeewayRequestStatus] = useState<'not_requested' | 'pending' | 'approved' | 'rejected' | null>(null);
   const [leewayRequestedItems, setLeewayRequestedItems] = useState<any[]>([]);
   const [isRequestingLeeway, setIsRequestingLeeway] = useState(false);
 
@@ -445,15 +444,12 @@ export function CheckoutPage() {
               ...i,
               status: i.status || data.status || 'pending'
             }));
-            setLeewayRequestStatus(data.status);
             setLeewayRequestedItems(mappedItems);
           } else {
-            setLeewayRequestStatus('not_requested');
             setLeewayRequestedItems([]);
           }
         });
     } else {
-      setLeewayRequestStatus(null);
       setLeewayRequestedItems([]);
     }
   }, [user, tenantId]);
@@ -534,12 +530,6 @@ export function CheckoutPage() {
       }
 
       setLeewayRequestedItems(mergedItems);
-      const finalStatus = mergedItems.some(i => i.status === 'pending')
-        ? 'pending'
-        : mergedItems.some(i => i.status === 'approved')
-          ? 'approved'
-          : 'rejected';
-      setLeewayRequestStatus(finalStatus);
 
       showSuccess('Leeway pre-approval request submitted successfully for your items!');
     } catch (err: any) {

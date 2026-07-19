@@ -5,7 +5,7 @@ import { useNotification } from "../../core/context/NotificationContext";
 import { supabase } from "../../lib/supabase/supabaseClient";
 import { 
   Check, Calendar, ShoppingBag, MapPin, CreditCard, ChevronDown, 
-  ChevronUp, AlertCircle, Loader2, Coins, ArrowUpRight, Upload, X, CheckCircle,
+  ChevronUp, AlertCircle, Loader2, Coins, ArrowUpRight, Upload, X,
   Heart, Info, User
 } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
@@ -306,9 +306,7 @@ export function CustomerOrdersPage() {
   const [leewayPayments, setLeewayPayments] = useState<LeewayPayment[]>([]);
   const [loadingLeeway, setLoadingLeeway] = useState(true);
   const [paymentMethods, setPaymentMethods] = useState<any[]>([]);
-  const [leewayRequestStatus, setLeewayRequestStatus] = useState<'not_requested' | 'pending' | 'approved' | 'rejected' | null>(null);
   const [leewayRequestedItems, setLeewayRequestedItems] = useState<any[]>([]);
-  const [isRequestingLeeway, setIsRequestingLeeway] = useState(false);
 
   // Leeway payment submission modal states
   const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
@@ -502,10 +500,8 @@ export function CustomerOrdersPage() {
           }
         }
 
-        setLeewayRequestStatus(requestData.status as any);
         setLeewayRequestedItems(mappedItems);
       } else {
-        setLeewayRequestStatus('not_requested');
         setLeewayRequestedItems([]);
       }
 
@@ -538,30 +534,6 @@ export function CustomerOrdersPage() {
     }
   };
 
-  const handleRequestLeeway = async () => {
-    if (!user || !tenant?.id) return;
-    setIsRequestingLeeway(true);
-    try {
-      const { error } = await supabase
-        .from("leeway_requests")
-        .insert({
-          tenant_id: tenant.id,
-          customer_id: user.id,
-          status: 'pending',
-          customer_name: user.user_metadata?.full_name || user.email || 'Unknown',
-          customer_email: user.email
-        });
-
-      if (error) throw error;
-      setLeewayRequestStatus('pending');
-      showSuccess("Leeway pre-approval request submitted successfully!");
-    } catch (err: any) {
-      console.error(err);
-      showError("Failed to submit leeway request: " + (err.message || err));
-    } finally {
-      setIsRequestingLeeway(false);
-    }
-  };
 
   const [isCheckingOutLeeway, setIsCheckingOutLeeway] = useState(false);
 
