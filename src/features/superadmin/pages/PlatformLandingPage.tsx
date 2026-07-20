@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { 
-  Check, ArrowRight, ShieldCheck, Zap, BarChart3, Coins, Database, Users, HelpCircle, Loader2, X, MessageSquare 
+  Check, ArrowRight, ShieldCheck, Zap, BarChart3, Coins, Users, HelpCircle, Loader2, X, MessageSquare 
 } from "lucide-react";
 import { FadeUp } from "../../../ui/Motion/FadeUp";
 import { supabase } from "../../../lib/supabase/supabaseClient";
@@ -322,7 +322,7 @@ export function PlatformLandingPage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-stretch">
-            {plans.map((plan, idx) => {
+            {plans.map((plan) => {
               const isCustom = plan.priceMonthly === "Custom" || plan.priceYearly === "Custom";
               const price = billingCycle === 'monthly' ? plan.priceMonthly : plan.priceYearly;
             
@@ -359,7 +359,7 @@ export function PlatformLandingPage() {
                   </div>
 
                   <ul className="space-y-3.5 text-xs text-slate-300">
-                    {plan.features.map(f => (
+                    {plan.features.map((f: string) => (
                       <li key={f} className="flex items-start gap-3">
                         <Check className="w-4 h-4 text-brand-pink shrink-0 mt-0.5" />
                         <span className="leading-relaxed">{f}</span>

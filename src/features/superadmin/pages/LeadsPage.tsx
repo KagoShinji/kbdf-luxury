@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../lib/supabase/supabaseClient';
 import { useNotification } from '../../../core/context/NotificationContext';
 import { 
-  Loader2, Search, MessageSquare, ExternalLink, Calendar, Edit2, CheckCircle, Trash2, X 
+  Loader2, Search, MessageSquare, ExternalLink, Edit2, CheckCircle, Trash2, X 
 } from 'lucide-react';
 
 export function SuperAdminLeadsPage() {
