@@ -1,6 +1,6 @@
 import { NavLink, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Shield, LayoutDashboard, Globe, Settings, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { Shield, LayoutDashboard, Globe, Settings, ChevronLeft, ChevronRight, LogOut, MessageSquare } from 'lucide-react';
 import { useAdminAuth } from '../../admin/context/AdminAuthContext';
 import { clsx } from 'clsx';
 
@@ -16,6 +16,7 @@ export function SuperAdminSidebar({ collapsed, onToggle }: SuperAdminSidebarProp
   const menuItems = [
     { label: 'Dashboard', href: '/odc', icon: LayoutDashboard },
     { label: 'Tenants', href: '/odc/tenants', icon: Globe },
+    { label: 'Leads', href: '/odc/leads', icon: MessageSquare },
     { label: 'Settings', href: '/odc/settings', icon: Settings },
   ];
 

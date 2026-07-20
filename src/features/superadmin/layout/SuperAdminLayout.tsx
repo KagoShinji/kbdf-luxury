@@ -6,6 +6,7 @@ import { SuperAdminHeader } from './SuperAdminHeader';
 const SUPER_TITLES: Record<string, string> = {
   '/odc': 'Platform Overview',
   '/odc/tenants': 'Tenant Management',
+  '/odc/leads': 'Platform Inquiries',
   '/odc/settings': 'Platform Settings',
 };
 

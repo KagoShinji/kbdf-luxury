@@ -38,6 +38,7 @@ import { PlatformDashboardPage } from "./features/superadmin/pages/DashboardPage
 import { TenantsPage } from "./features/superadmin/pages/TenantsPage";
 import { TenantDetailPage } from "./features/superadmin/pages/TenantDetailPage";
 import { PlatformSettingsPage } from "./features/superadmin/pages/PlatformSettingsPage";
+import { SuperAdminLeadsPage } from "./features/superadmin/pages/LeadsPage";
 
 import { CheckoutPage } from "./features/checkout/CheckoutPage";
 import { OrdersPage } from "./features/admin/pages/OrdersPage";
@@ -46,7 +47,47 @@ import { UserAuthProvider } from "./core/context/UserAuthContext";
 import { CustomerOrdersPage } from "./features/checkout/CustomerOrdersPage";
 import { NotificationProvider } from "./core/context/NotificationContext";
 
+import { IS_PLATFORM } from "./lib/supabase/supabaseClient";
+import { PlatformLandingPage } from "./features/superadmin/pages/PlatformLandingPage";
+
 function App() {
+  if (IS_PLATFORM) {
+    return (
+      <NotificationProvider>
+        <AdminAuthProvider>
+          <UserAuthProvider>
+            <ScrollToTop />
+            <Routes>
+              {/* Platform Public Landing Page */}
+              <Route path="/" element={<PlatformLandingPage />} />
+              
+              {/* Platform Superadmin Routes */}
+              <Route path="/odc/login" element={<SuperAdminLoginPage />} />
+              <Route
+                path="/odc/*"
+                element={
+                  <SuperAdminGuard>
+                    <SuperAdminLayout>
+                      <Routes>
+                        <Route index element={<PlatformDashboardPage />} />
+                        <Route path="tenants" element={<TenantsPage />} />
+                        <Route path="tenants/:id" element={<TenantDetailPage />} />
+                        <Route path="leads" element={<SuperAdminLeadsPage />} />
+                        <Route path="settings" element={<PlatformSettingsPage />} />
+                      </Routes>
+                    </SuperAdminLayout>
+                  </SuperAdminGuard>
+                }
+              />
+              {/* Fallback */}
+              <Route path="*" element={<PlatformLandingPage />} />
+            </Routes>
+          </UserAuthProvider>
+        </AdminAuthProvider>
+      </NotificationProvider>
+    );
+  }
+
   return (
     <NotificationProvider>
       <AdminAuthProvider>
@@ -117,6 +158,7 @@ function App() {
                     <Route index element={<PlatformDashboardPage />} />
                     <Route path="tenants" element={<TenantsPage />} />
                     <Route path="tenants/:id" element={<TenantDetailPage />} />
+                    <Route path="leads" element={<SuperAdminLeadsPage />} />
                     <Route path="settings" element={<PlatformSettingsPage />} />
                   </Routes>
                 </SuperAdminLayout>
