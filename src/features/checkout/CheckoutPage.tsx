@@ -48,7 +48,7 @@ export function CheckoutPage() {
   const [showMobileSummary, setShowMobileSummary] = useState(false);
 
   useEffect(() => {
-    if (items.length === 0 && step !== 5) {
+    if (items.length === 0 && step !== 4 && step !== 5) {
       navigate('/shop', { replace: true });
     }
   }, [items.length, step, navigate]);
