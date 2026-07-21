@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Eye, EyeOff, ShieldAlert } from 'lucide-react';
 import { adminSignIn } from '../../admin/api/auth';
 import { useAdminAuth } from '../../admin/context/AdminAuthContext';
+import { Turnstile } from '../../../ui/Turnstile';
 
 export function SuperAdminLoginPage() {
   const { adminUser, isSuperadmin, isLoading } = useAdminAuth();
@@ -12,6 +13,10 @@ export function SuperAdminLoginPage() {
   const [showPw, setShowPw] = useState(false);
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [turnstileResetCount, setTurnstileResetCount] = useState(0);
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const siteKey = isLocalhost ? "1x00000000000000000000AA" : (import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
 
   // If already authenticated as superadmin, redirect to /odc dashboard
   if (!isLoading && adminUser && isSuperadmin) return <Navigate to="/odc" replace />;
@@ -22,7 +27,7 @@ export function SuperAdminLoginPage() {
     setSubmitting(true);
 
     try {
-      const response = await adminSignIn(email, password);
+      const response = await adminSignIn(email, password, captchaToken || undefined);
       
       const { data: userDetails, error: userError } = await (supabase as any)
         .from('admin_users')
@@ -37,6 +42,8 @@ export function SuperAdminLoginPage() {
       setError(err.message || 'Invalid credentials. Access Denied.');
       // Sign out immediately to clean up sessions
       supabase.auth.signOut().catch(() => {});
+      setTurnstileResetCount(prev => prev + 1);
+      setCaptchaToken(null);
     } finally {
       setSubmitting(false);
     }
@@ -110,10 +117,17 @@ export function SuperAdminLoginPage() {
               </div>
             </div>
 
+            {siteKey && (
+              <Turnstile 
+                onVerify={setCaptchaToken} 
+                resetTrigger={turnstileResetCount}
+              />
+            )}
+ 
             {/* Submit */}
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || (!!siteKey && !captchaToken)}
               className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-[#fb7a90] to-[#f16881] text-white rounded-xl px-6 py-3 font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed pt-3"
             >
               {submitting ? (

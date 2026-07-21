@@ -9,6 +9,7 @@ import { useUserAuth } from '../../core/context/UserAuthContext';
 import { useNotification } from '../../core/context/NotificationContext';
 import { Check, X, Clipboard, CreditCard, ShoppingBag, MapPin, Truck, ChevronRight, Download, Loader2, User, LogIn, Clock, AlertTriangle, Store, ChevronDown } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
+import { Turnstile } from '../../ui/Turnstile';
 
 interface PaymentMethod {
   id: string;
@@ -39,6 +40,18 @@ export function CheckoutPage() {
   const [authName, setAuthName] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [turnstileResetCount, setTurnstileResetCount] = useState(0);
+  const [orderCaptchaToken, setOrderCaptchaToken] = useState<string | null>(null);
+  const [orderTurnstileResetCount, setOrderTurnstileResetCount] = useState(0);
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const siteKey = isLocalhost ? "1x00000000000000000000AA" : (import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
+ 
+  // Reset Turnstile when switching auth tabs
+  useEffect(() => {
+    setCaptchaToken(null);
+    setTurnstileResetCount(prev => prev + 1);
+  }, [authTab]);
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [isPlacing, setIsPlacing] = useState(false);
@@ -599,9 +612,9 @@ export function CheckoutPage() {
     setAuthError('');
     try {
       if (authTab === 'login') {
-        await signIn(authEmail, authPassword);
+        await signIn(authEmail, authPassword, captchaToken || undefined);
       } else {
-        await signUp(authEmail, authPassword, authName);
+        await signUp(authEmail, authPassword, authName, captchaToken || undefined);
         showSuccess('Verification email sent! You can continue checkout.');
         setAuthTab('login');
         setAuthName('');
@@ -610,6 +623,8 @@ export function CheckoutPage() {
       }
     } catch (err: any) {
       setAuthError(err.message || 'Authentication failed.');
+      setTurnstileResetCount(prev => prev + 1);
+      setCaptchaToken(null);
     } finally {
       setAuthLoading(false);
     }
@@ -1042,10 +1057,17 @@ export function CheckoutPage() {
               </div>
             )}
 
+            {siteKey && (
+              <Turnstile 
+                onVerify={setCaptchaToken} 
+                resetTrigger={turnstileResetCount}
+              />
+            )}
+ 
             <button 
               type="submit" 
-              disabled={authLoading}
-              className="w-full bg-brand-navy hover:bg-brand-pink text-white rounded-xl py-3 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+              disabled={authLoading || (!!siteKey && !captchaToken)}
+              className="w-full bg-brand-navy hover:bg-brand-pink text-white rounded-xl py-3 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
               {authTab === 'login' ? 'Sign In' : 'Register'}
@@ -1860,7 +1882,11 @@ export function CheckoutPage() {
               {step === 3 && (
                 <button
                   type="button"
-                  onClick={() => setShowConfirmModal(true)}
+                  onClick={() => {
+                    setOrderCaptchaToken(null);
+                    setOrderTurnstileResetCount(prev => prev + 1);
+                    setShowConfirmModal(true);
+                  }}
                   disabled={isPlacing}
                   className="flex-[2] flex items-center justify-center gap-2 bg-brand-navy hover:bg-brand-navy/90 text-white rounded-xl py-3.5 font-bold text-xs uppercase tracking-widest active:scale-[0.98] transition-all disabled:opacity-50 shadow-sm"
                 >
@@ -1882,14 +1908,24 @@ export function CheckoutPage() {
                 <p className="text-sm text-typography-muted mb-6">
                   Are you sure you want to place this order? Please ensure all your details are correct.
                 </p>
+
+                {siteKey && (
+                  <div className="mb-6 w-full">
+                    <Turnstile 
+                      onVerify={setOrderCaptchaToken} 
+                      resetTrigger={orderTurnstileResetCount}
+                    />
+                  </div>
+                )}
+
                 <div className="flex flex-col w-full gap-3">
                   <button
                     onClick={() => {
                       setShowConfirmModal(false);
                       handlePlaceOrder();
                     }}
-                    disabled={isPlacing}
-                    className="w-full flex items-center justify-center gap-2 bg-brand-navy hover:bg-brand-navy/90 text-white rounded-xl py-3.5 font-bold text-xs uppercase tracking-widest active:scale-[0.98] transition-all disabled:opacity-50"
+                    disabled={isPlacing || (!!siteKey && !orderCaptchaToken)}
+                    className="w-full flex items-center justify-center gap-2 bg-brand-navy hover:bg-brand-navy/90 text-white rounded-xl py-3.5 font-bold text-xs uppercase tracking-widest active:scale-[0.98] transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {isPlacing ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Yes, Place Order'}
                   </button>

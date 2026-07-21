@@ -5,6 +5,7 @@ import { Eye, EyeOff, LogIn, Lock } from 'lucide-react';
 import { adminSignIn } from '../api/auth';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { supabase, TENANT_ID } from '../../../lib/supabase/supabaseClient';
+import { Turnstile } from '../../../ui/Turnstile';
 
 export function AdminLoginPage() {
   const { adminUser, isLoading } = useAdminAuth();
@@ -14,6 +15,10 @@ export function AdminLoginPage() {
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [tenant, setTenant] = useState<any>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [turnstileResetCount, setTurnstileResetCount] = useState(0);
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const siteKey = isLocalhost ? "1x00000000000000000000AA" : (import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
 
   useEffect(() => {
     if (TENANT_ID) {
@@ -38,9 +43,11 @@ export function AdminLoginPage() {
     setError('');
     setSubmitting(true);
     try {
-      await adminSignIn(email, password);
+      await adminSignIn(email, password, captchaToken || undefined);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'Invalid credentials. Please try again.');
+      setTurnstileResetCount(prev => prev + 1);
+      setCaptchaToken(null);
     } finally {
       setSubmitting(false);
     }
@@ -132,10 +139,17 @@ export function AdminLoginPage() {
               </motion.div>
             )}
 
+            {siteKey && (
+              <Turnstile 
+                onVerify={setCaptchaToken} 
+                resetTrigger={turnstileResetCount}
+              />
+            )}
+ 
             {/* Submit */}
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || (!!siteKey && !captchaToken)}
               className="mt-6 flex items-center justify-center gap-2 bg-brand-navy text-white px-8 py-4 text-[10px] uppercase tracking-widest font-bold hover:bg-brand-peach transition-colors w-full disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? (

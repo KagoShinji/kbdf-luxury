@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 import { Loader2, AlertCircle, CheckCircle, Check, X, Eye, EyeOff } from "lucide-react";
 import { useNotification } from "../../core/context/NotificationContext";
 import { useTenant } from "../../core/context/TenantContext";
+import { Turnstile } from "../../ui/Turnstile";
 
 export function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
@@ -26,6 +27,10 @@ export function AuthPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [turnstileResetCount, setTurnstileResetCount] = useState(0);
+  const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+  const siteKey = isLocalhost ? "1x00000000000000000000AA" : (import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
 
   const passwordCriteria = [
     { label: "At least 6 characters", met: password.length >= 6 },
@@ -61,14 +66,14 @@ export function AuthPage() {
     setIsSubmitting(true);
     setErrorMsg("");
     setSuccessMsg("");
-
+ 
     try {
       if (isLogin) {
-        await signIn(email, password);
+        await signIn(email, password, captchaToken || undefined);
         setSuccessMsg("Signed in successfully!");
         setTimeout(() => navigate("/shop"), 1000);
       } else {
-        await signUp(email, password, fullName);
+        await signUp(email, password, fullName, captchaToken || undefined);
         setSuccessMsg("Registration successful! Please check your email for confirmation link.");
         setIsLogin(true);
         // Clear registration states
@@ -79,6 +84,8 @@ export function AuthPage() {
     } catch (err: any) {
       console.error(err);
       setErrorMsg(err.message || "Authentication failed. Please verify credentials.");
+      setTurnstileResetCount(prev => prev + 1);
+      setCaptchaToken(null);
     } finally {
       setIsSubmitting(false);
     }
@@ -218,11 +225,17 @@ export function AuthPage() {
                   </div>
                 </div>
               )}
-              
+              {siteKey && (
+                <Turnstile 
+                  onVerify={setCaptchaToken} 
+                  resetTrigger={turnstileResetCount}
+                />
+              )}
+ 
               <button 
                 type="submit" 
-                disabled={isSubmitting}
-                className="bg-brand-navy text-surface-white px-8 py-4 text-xs uppercase tracking-widest hover:bg-brand-pink transition-colors w-full mt-4 font-bold rounded-xl flex items-center justify-center gap-2"
+                disabled={isSubmitting || (!!siteKey && !captchaToken)}
+                className="bg-brand-navy text-surface-white px-8 py-4 text-xs uppercase tracking-widest hover:bg-brand-pink transition-colors w-full mt-4 font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
                   <Loader2 className="w-4 h-4 animate-spin" />

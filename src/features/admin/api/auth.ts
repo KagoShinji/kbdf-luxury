@@ -1,7 +1,11 @@
 import { supabase } from '../../../lib/supabase/supabaseClient';
 
-export async function adminSignIn(email: string, password: string) {
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+export async function adminSignIn(email: string, password: string, captchaToken?: string) {
+  const { data, error } = await supabase.auth.signInWithPassword({ 
+    email, 
+    password,
+    options: captchaToken ? { captchaToken } : undefined
+  });
   if (error) throw error;
   return data;
 }
