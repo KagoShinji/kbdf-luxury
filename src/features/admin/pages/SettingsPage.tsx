@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useAdminUser } from '../hooks/useAdminUser';
 import { usePermissions } from '../hooks/usePermissions';
 import { supabase } from '../../../lib/supabase/supabaseClient';
-import { Save, AlertCircle, Layout, PhoneCall, Image as ImageIcon, Settings, Truck } from 'lucide-react';
+import { Save, AlertCircle, Layout, PhoneCall, Image as ImageIcon, Settings, Truck, FileText } from 'lucide-react';
 import { ImageUploadInput } from '../components/ImageUploadInput';
 import { fetchProvinces } from '../../cart/locationData';
 import type { PSGCLocation } from '../../cart/locationData';
@@ -11,7 +11,7 @@ export function SettingsPage() {
   const { tenant } = useAdminUser();
   const { canEdit } = usePermissions('settings');
 
-  const [activeTab, setActiveTab] = useState<'branding' | 'contact' | 'hero' | 'homepage' | 'shipping'>('branding');
+  const [activeTab, setActiveTab] = useState<'branding' | 'contact' | 'hero' | 'homepage' | 'shipping' | 'legal'>('branding');
 
   // Shipping Settings State
   interface ShippingRate {
@@ -53,6 +53,10 @@ export function SettingsPage() {
   // Social Media Meta Tags
   const [metaImageUrl, setMetaImageUrl] = useState('');
   const [metaDescription, setMetaDescription] = useState('');
+
+  // Legal Policies
+  const [termsText, setTermsText] = useState('');
+  const [privacyContact, setPrivacyContact] = useState('');
 
   // Tab 2: Contact
   const [address, setAddress] = useState('');
@@ -154,6 +158,8 @@ export function SettingsPage() {
       setAdminBgUrl(branding.admin_bg_url || '');
       setMetaImageUrl(branding.meta_image_url || '');
       setMetaDescription(branding.meta_description || '');
+      setTermsText(settings.terms || '');
+      setPrivacyContact(settings.privacy_contact || '');
       
       const hours = settings.hours || {};
       setMonFriHours(hours.monday_friday || '10:00 AM - 9:00 PM');
@@ -278,6 +284,8 @@ export function SettingsPage() {
           meta_image_url: metaImageUrl.trim() || null,
           meta_description: metaDescription.trim() || null,
         },
+        terms: termsText.trim() || null,
+        privacy_contact: privacyContact.trim() || null,
         homepage: {
           announcement_text: announcementText.trim(),
           hero: {
@@ -484,6 +492,17 @@ export function SettingsPage() {
           }`}
         >
           <Truck className="w-4 h-4" /> Shipping Rates
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('legal')}
+          className={`flex items-center gap-2 px-4 py-2.5 border-b-2 font-medium text-xs uppercase tracking-wider transition-all whitespace-nowrap ${
+            activeTab === 'legal'
+              ? 'border-[#fb7a90] text-[#fb7a90]'
+              : 'border-transparent text-white/50 hover:text-white'
+          }`}
+        >
+          <FileText className="w-4 h-4" /> Legal Policies
         </button>
       </div>
 
@@ -1367,7 +1386,51 @@ export function SettingsPage() {
                 </div>
               )}
             </div>
+          </div>
+        )}
 
+        {/* TAB 6: LEGAL POLICIES */}
+        {activeTab === 'legal' && (
+          <div className="space-y-6">
+            <div className="bg-[#111827] border border-white/5 p-5 rounded-2xl space-y-4">
+              <h3 className="text-white font-semibold text-sm border-b border-white/5 pb-2">Terms and Conditions</h3>
+              <p className="text-[11px] text-white/50 leading-relaxed">
+                Configure custom Terms and Conditions for your store. Customers will be able to review these terms when completing their orders. If left blank, a default standard terms template will be displayed.
+              </p>
+
+              <div className="flex flex-col gap-2">
+                <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Terms and Conditions Text</label>
+                <textarea
+                  value={termsText}
+                  onChange={e => setTermsText(e.target.value)}
+                  disabled={!canEdit}
+                  placeholder="Insert custom Terms and Conditions here..."
+                  rows={20}
+                  className="w-full bg-[#0f1117] border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder:text-white/20 outline-none focus:border-[#fb7a90]/50 transition-colors disabled:opacity-50 font-mono"
+                />
+              </div>
+            </div>
+            
+            <div className="bg-[#111827] border border-white/5 p-5 rounded-2xl space-y-4">
+              <h3 className="text-white font-semibold text-sm border-b border-white/5 pb-2">Data Privacy Policy</h3>
+              <p className="text-[11px] text-white/50 leading-relaxed">
+                In compliance with the **Republic Act No. 10173 (Data Privacy Act of 2012 of the Philippines)**, your store is pre-configured with a comprehensive Data Privacy Policy. You can provide your official Data Protection contact information below to be displayed on your Privacy Policy page.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-2">
+                  <label className="text-white/60 text-xs font-medium uppercase tracking-wider">Data Protection Officer (DPO) Name / Email</label>
+                  <input
+                    type="text"
+                    value={privacyContact}
+                    onChange={e => setPrivacyContact(e.target.value)}
+                    disabled={!canEdit}
+                    placeholder="e.g. privacy@yourbrand.com"
+                    className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#fb7a90]/50 transition-colors"
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         )}
 

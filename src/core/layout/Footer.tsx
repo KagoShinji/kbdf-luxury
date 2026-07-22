@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import { useTenant } from "../context/TenantContext";
 
 export function Footer() {
@@ -55,8 +56,8 @@ export function Footer() {
 
         {/* Links & Copyright */}
         <div className="flex flex-wrap justify-center items-center gap-6 text-[9px] text-typography-muted/70 tracking-[0.2em] uppercase">
-          <a href="#" className="hover:text-typography-primary transition-colors">Terms</a>
-          <a href="#" className="hover:text-typography-primary transition-colors">Privacy</a>
+          <Link to="/terms" className="hover:text-typography-primary transition-colors">Terms</Link>
+          <Link to="/privacy" className="hover:text-typography-primary transition-colors">Privacy</Link>
           <span>© {new Date().getFullYear()} {brandName}</span>
           <span>
             Site by <a href="https://www.facebook.com/profile.php?id=61587269647950" className="hover:text-typography-primary transition-colors font-semibold" target="_blank" rel="noopener noreferrer">ODC</a>

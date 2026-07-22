@@ -11,6 +11,8 @@ import { CartProvider } from "./features/cart/CartContext";
 import { CartDrawer } from "./features/cart/CartDrawer";
 import { FavoritesProvider } from "./features/favorites/FavoritesContext";
 import { ProductDetailPage } from "./features/products/ProductDetailPage";
+import { PrivacyPolicyPage } from "./features/legal/PrivacyPolicyPage";
+import { TermsConditionsPage } from "./features/legal/TermsConditionsPage";
 
 // Admin Imports
 import { AdminAuthProvider } from "./features/admin/context/AdminAuthContext";
@@ -113,6 +115,8 @@ function App() {
                         <Route path="/checkout" element={<CheckoutPage />} />
                         <Route path="/orders" element={<CustomerOrdersPage />} />
                         <Route path="/auth" element={<AuthPage />} />
+                        <Route path="/privacy" element={<PrivacyPolicyPage />} />
+                        <Route path="/terms" element={<TermsConditionsPage />} />
                       </Routes>
                       <CartDrawer />
                     </AppShell>
