@@ -95,6 +95,11 @@ export async function deleteItem(id: string) {
   if (error) throw error;
 }
 
+export async function deleteItemsBulk(ids: string[]) {
+  const { error } = await supabase.from('items').delete().in('id', ids);
+  if (error) throw error;
+}
+
 /** Generate a URL-friendly slug from a title */
 export function generateSlug(title: string): string {
   return title

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAdminUser } from '../hooks/useAdminUser';
 import { usePermissions } from '../hooks/usePermissions';
-import { fetchItemsPaginated, createItem, updateItem, deleteItem } from '../api/items';
+import { fetchItemsPaginated, createItem, updateItem, deleteItem, deleteItemsBulk } from '../api/items';
 import { fetchCategories } from '../api/categories';
 import type { Item, Category } from '../../../lib/supabase/database.types';
 import { DataTable } from '../components/DataTable';
@@ -19,6 +19,8 @@ export function ItemsPage() {
   const [items, setItems] = useState<any[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Pagination & Server States
   const [page, setPage] = useState(1);
@@ -52,7 +54,12 @@ export function ItemsPage() {
   // Reset page when filters or search change
   useEffect(() => {
     setPage(1);
+    setSelectedIds([]);
   }, [search, selectedCategory, selectedStock, selectedCondition]);
+
+  useEffect(() => {
+    setSelectedIds([]);
+  }, [page]);
 
   useEffect(() => {
     if (tenantId) {
@@ -100,6 +107,24 @@ export function ItemsPage() {
         await loadData();
       } catch (err) {
         showError('Failed to delete item: ' + (err as any).message);
+      }
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (selectedIds.length === 0) return;
+    const confirmed = await showConfirm(`Are you sure you want to delete the ${selectedIds.length} selected item(s)?`);
+    if (confirmed) {
+      setIsLoading(true);
+      try {
+        await deleteItemsBulk(selectedIds);
+        setSelectedIds([]);
+        setIsBulkMode(false);
+        await loadData();
+      } catch (err) {
+        showError('Failed to delete items: ' + (err as any).message);
+      } finally {
+        setIsLoading(false);
       }
     }
   }
@@ -235,14 +260,48 @@ export function ItemsPage() {
           <p className="text-white/40 text-xs mt-0.5">Manage your items, prices, conditions and stock levels.</p>
         </div>
 
-        <PermissionGate module="items" action="create">
-          <button
-            onClick={handleAddClick}
-            className="flex items-center justify-center gap-2 bg-gradient-to-r from-[#fb7a90] to-[#f16881] text-white rounded-xl px-4 py-2.5 font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" /> Add Item
-          </button>
-        </PermissionGate>
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          {canDelete && (
+            <>
+              {!isBulkMode ? (
+                <button
+                  onClick={() => setIsBulkMode(true)}
+                  className="flex items-center justify-center gap-2 bg-[#1f2937] hover:bg-[#374151] border border-white/10 text-white rounded-xl px-4 py-2.5 font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all"
+                >
+                  Multiple Delete
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={handleBulkDelete}
+                    disabled={selectedIds.length === 0}
+                    className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-4 py-2.5 font-semibold text-sm active:scale-[0.98] transition-all"
+                  >
+                    Delete Selected ({selectedIds.length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsBulkMode(false);
+                      setSelectedIds([]);
+                    }}
+                    className="flex items-center justify-center gap-2 bg-[#1f2937] hover:bg-[#374151] border border-white/10 text-white rounded-xl px-4 py-2.5 font-semibold text-sm active:scale-[0.98] transition-all"
+                  >
+                    Cancel Selection
+                  </button>
+                </>
+              )}
+            </>
+          )}
+
+          <PermissionGate module="items" action="create">
+            <button
+              onClick={handleAddClick}
+              className="flex items-center justify-center gap-2 bg-gradient-to-r from-[#fb7a90] to-[#f16881] text-white rounded-xl px-4 py-2.5 font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all"
+            >
+              <Plus className="w-4 h-4" /> Add Item
+            </button>
+          </PermissionGate>
+        </div>
       </div>
 
       {/* Filter panel */}
@@ -297,7 +356,50 @@ export function ItemsPage() {
 
       {/* Main Table */}
       <DataTable
-        columns={columns}
+        columns={[
+          ...(isBulkMode
+            ? [
+                {
+                  key: 'selection',
+                  label: (
+                    <div className="flex items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={items.length > 0 && selectedIds.length === items.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(items.map(item => item.id));
+                          } else {
+                            setSelectedIds([]);
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-white/10 text-[#fb7a90] bg-[#0f1117] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                      />
+                    </div>
+                  ),
+                  render: (row: any) => (
+                    <div className="flex items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(row.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(prev => [...prev, row.id]);
+                          } else {
+                            setSelectedIds(prev => prev.filter(id => id !== row.id));
+                          }
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        className="w-4 h-4 rounded border-white/10 text-[#fb7a90] bg-[#0f1117] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                      />
+                    </div>
+                  ),
+                  width: '48px',
+                },
+              ]
+            : []),
+          ...columns,
+        ]}
         data={items}
         isLoading={isLoading}
         searchPlaceholder="Search title, SKU or brand..."
