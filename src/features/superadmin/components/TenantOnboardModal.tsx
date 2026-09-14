@@ -12,6 +12,7 @@ interface TenantOnboardModalProps {
 export function TenantOnboardModal({ isOpen, onClose, onSuccess }: TenantOnboardModalProps) {
   const [storeName, setStoreName] = useState('');
   const [slug, setSlug] = useState('');
+  const [businessType, setBusinessType] = useState('e-commerce');
   const [adminEmail, setAdminEmail] = useState('');
   const [adminName, setAdminName] = useState('');
   const [adminPassword, setAdminPassword] = useState('');
@@ -54,6 +55,7 @@ export function TenantOnboardModal({ isOpen, onClose, onSuccess }: TenantOnboard
       const result = await onboardTenant({
         name: storeName.trim(),
         slug: slug.trim(),
+        businessType,
         adminEmail: adminEmail.trim(),
         adminName: adminName.trim(),
         adminPassword: adminPassword.trim(),
@@ -131,6 +133,20 @@ export function TenantOnboardModal({ isOpen, onClose, onSuccess }: TenantOnboard
                   placeholder="e.g. kbdf"
                   className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white placeholder:text-white/20 outline-none focus:border-[#fb7a90]/50 transition-colors font-mono"
                 />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-white/60 text-xs font-medium">Industry / Business Type</label>
+                <select
+                  value={businessType}
+                  onChange={e => setBusinessType(e.target.value)}
+                  className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-[#fb7a90]/50 transition-colors"
+                >
+                  <option value="e-commerce">E-Commerce & Retail Store (e.g. KBDF Luxury)</option>
+                  <option value="portfolio_food">Portfolio: Food & Restaurant (e.g. Misis Siomai)</option>
+                  <option value="portfolio_construction">Portfolio: Construction & Engineering</option>
+                  <option value="portfolio_general">Portfolio: General Showcase</option>
+                </select>
               </div>
 
               <div className="flex flex-col gap-1.5">

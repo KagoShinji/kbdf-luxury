@@ -16,6 +16,7 @@ export interface Database {
           timezone: string;
           store_settings: Json;
           is_active: boolean;
+          business_type?: string | null;
           reservation_duration_seconds: number;
           created_at: string;
           updated_at: string;

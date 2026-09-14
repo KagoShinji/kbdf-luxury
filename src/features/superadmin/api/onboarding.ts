@@ -1,6 +1,6 @@
 import { supabase } from '../../../lib/supabase/supabaseClient';
 
-interface OnboardPayload {
+export interface OnboardPayload {
   name: string;
   slug: string;
   adminEmail: string;
@@ -10,10 +10,13 @@ interface OnboardPayload {
   primaryColor?: string;
   accentColor?: string;
   currencySymbol?: string;
+  businessType?: string;
 }
 
 export async function onboardTenant(payload: OnboardPayload) {
-  // 1. Insert tenant
+  const businessType = payload.businessType || 'e-commerce';
+
+  // 1. Insert tenant into public.tenants
   const { data: tenant, error: tenantError } = await (supabase as any)
     .from('tenants')
     .insert({
@@ -23,12 +26,36 @@ export async function onboardTenant(payload: OnboardPayload) {
       primary_color: payload.primaryColor || '#2f4065',
       accent_color: payload.accentColor || '#fb7a90',
       currency_symbol: payload.currencySymbol || '₱',
+      business_type: businessType,
       is_active: true
     })
     .select()
     .single();
 
   if (tenantError) throw tenantError;
+
+  // 1b. If portfolio client, also sync into cms.tenants table
+  if (businessType && (businessType.startsWith('portfolio') || businessType === 'food' || businessType === 'construction')) {
+    const industryName = businessType.replace('portfolio_', '') || 'general';
+    try {
+      await (supabase as any)
+        .schema('cms')
+        .from('tenants')
+        .insert([{
+          id: payload.slug || tenant.id,
+          name: payload.name,
+          industry: industryName,
+          domain: `${payload.slug}.com`,
+          settings: {
+            email: payload.adminEmail,
+            primaryColor: payload.primaryColor,
+            accentColor: payload.accentColor
+          }
+        }]);
+    } catch (cmsErr) {
+      console.warn('CMS Tenant insertion warning:', cmsErr);
+    }
+  }
 
   // 2. Create default Admin role
   const { data: adminRole, error: roleError } = await (supabase as any)
@@ -112,7 +139,6 @@ export async function onboardTenant(payload: OnboardPayload) {
       full_name: payload.adminName,
       is_superadmin: false,
       is_active: true,
-      // Default full module visibility for the store owner
       access_overview: true,
       access_analytics: true,
       access_items: true,
