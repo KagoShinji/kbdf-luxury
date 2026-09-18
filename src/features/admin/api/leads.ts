@@ -90,11 +90,9 @@ export async function submitLead(payload: {
   subject?: string;
   message?: string;
 }) {
-  const { data, error } = await supabase
+  const { error } = await supabase
     .from('leads')
-    .insert(payload)
-    .select()
-    .single();
+    .insert([payload]);
   if (error) throw error;
-  return data;
+  return true;
 }

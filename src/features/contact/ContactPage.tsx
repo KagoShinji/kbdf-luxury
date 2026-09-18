@@ -2,6 +2,7 @@ import { useState } from "react";
 import { FadeUp } from "../../ui/Motion/FadeUp";
 import { submitLead } from "../admin/api/leads";
 import { TENANT_ID } from "../../lib/supabase/supabaseClient";
+import { sanitizePhPhone, isValidPhPhone, handlePhoneKeyDown } from "../../lib/utils/phone";
 
 export function ContactPage() {
   const [name, setName] = useState("");
@@ -9,7 +10,7 @@ export function ContactPage() {
   const [phone, setPhone] = useState("");
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
-  
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
@@ -22,6 +23,12 @@ export function ContactPage() {
 
     if (!TENANT_ID) {
       setError("System Configuration Error: Tenant ID is missing.");
+      setIsSubmitting(false);
+      return;
+    }
+
+    if (phone.trim() && !isValidPhPhone(phone.trim())) {
+      setError("Please enter a valid 11-digit Philippine mobile number starting with 09 (e.g. 09171234567).");
       setIsSubmitting(false);
       return;
     }
@@ -68,7 +75,7 @@ export function ContactPage() {
               <h2 className="text-xs uppercase tracking-[0.2em] mb-8 border-b border-surface-light pb-4 text-typography-primary">
                 Send a Message
               </h2>
-              
+
               {success && (
                 <div className="mb-6 p-4 text-emerald-800 bg-emerald-50 text-xs rounded border border-emerald-100 font-medium">
                   Thank you! Your message has been sent successfully. We will contact you soon.
@@ -103,13 +110,32 @@ export function ContactPage() {
                   />
                 </div>
                 <div className="flex flex-col gap-2">
-                  <label className="text-[10px] uppercase tracking-widest text-typography-muted">Phone Number</label>
+                  <div className="flex justify-between items-center">
+                    <label className="text-[10px] uppercase tracking-widest text-typography-muted">Phone Number</label>
+                    {phone && (
+                      <span className={`text-[10px] font-medium ${isValidPhPhone(phone) ? 'text-emerald-700' : 'text-amber-700'}`}>
+                        {isValidPhPhone(phone) ? '✓ Valid PH Number' : `${phone.length}/11 digits`}
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="tel"
+                    inputMode="numeric"
+                    maxLength={11}
+                    pattern="09[0-9]{9}"
+                    placeholder="09171234567"
                     value={phone}
-                    onChange={e => setPhone(e.target.value)}
+                    onKeyDown={handlePhoneKeyDown}
+                    onChange={e => setPhone(sanitizePhPhone(e.target.value))}
                     className="w-full border-b border-surface-light py-2 bg-transparent outline-none focus:border-typography-primary transition-colors text-sm text-typography-primary"
                   />
+                  {phone && !isValidPhPhone(phone) && (
+                    <p className="text-[11px] text-amber-700">
+                      {!phone.startsWith('09')
+                        ? 'Philippine mobile numbers must start with 09 (e.g. 09171234567)'
+                        : `Must be exactly 11 digits (${phone.length}/11)`}
+                    </p>
+                  )}
                 </div>
                 <div className="flex flex-col gap-2">
                   <label className="text-[10px] uppercase tracking-widest text-typography-muted">Subject</label>
@@ -148,12 +174,12 @@ export function ContactPage() {
                   Boutique Details
                 </h2>
                 <div className="flex flex-col gap-4 text-sm font-light text-typography-primary">
-                  <p>KBDF Flagship Store<br/>123 Luxury Avenue<br/>Metro Manila, Philippines</p>
-                  <p className="mt-4"><span className="text-[10px] uppercase tracking-widest text-typography-muted block mb-1">Telephone</span>+63 2 8123 4567</p>
-                  <p><span className="text-[10px] uppercase tracking-widest text-typography-muted block mb-1">Email</span>clientcare@kbdf.com</p>
+                  <p>KBDF Luxury Shop<br />South Poblacion <br />Naga City, Naga, Philippines</p>
+                  <p className="mt-4"><span className="text-[10px] uppercase tracking-widest text-typography-muted block mb-1">Mobile Number</span>+639661347386</p>
+                  <p><span className="text-[10px] uppercase tracking-widest text-typography-muted block mb-1">Email</span>kbdfluxury@gmail.com</p>
                 </div>
               </div>
-              
+
               <div>
                 <h2 className="text-xs uppercase tracking-[0.2em] mb-6 border-b border-surface-light pb-4 text-typography-primary">
                   Opening Hours
