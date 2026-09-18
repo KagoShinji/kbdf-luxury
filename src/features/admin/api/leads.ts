@@ -22,6 +22,8 @@ export async function fetchLeadsPaginated(params: {
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
   statusFilter?: string;
+  startDate?: string | null;
+  endDate?: string | null;
 }) {
   const tid = params.tenantId ?? TENANT_ID;
   const from = (params.page - 1) * params.pageSize;
@@ -39,6 +41,13 @@ export async function fetchLeadsPaginated(params: {
 
   if (params.statusFilter && params.statusFilter !== 'all') {
     query = query.eq('status', params.statusFilter);
+  }
+
+  if (params.startDate) {
+    query = query.gte('created_at', params.startDate);
+  }
+  if (params.endDate) {
+    query = query.lte('created_at', params.endDate);
   }
 
   const sortBy = params.sortBy || 'created_at';

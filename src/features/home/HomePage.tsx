@@ -396,14 +396,20 @@ export function HomePage() {
         <div className="flex w-full">
           <div className="animate-marquee flex w-max">
             {[...(social.images || DEFAULT_SOCIAL.images), ...(social.images || DEFAULT_SOCIAL.images)].map((src: string, i: number) => (
-              <a key={i} href="#" className="relative w-[50vw] md:w-[25vw] lg:w-[20vw] aspect-[4/5] group overflow-hidden block shrink-0 bg-brand-navy/5 flex items-center justify-center">
+              <a
+                key={i}
+                href="https://www.instagram.com/kbdfluxuryshop/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="relative w-[50vw] md:w-[25vw] lg:w-[20vw] aspect-[4/5] group overflow-hidden block shrink-0 bg-brand-navy/5 flex items-center justify-center"
+              >
                  {src ? (
                    <img src={src} className="w-full h-full object-cover object-top group-hover:scale-105 transition-transform duration-700" alt="Instagram Post" />
                  ) : (
                    <span className="text-brand-navy/20 font-bold uppercase tracking-widest text-xs">Social</span>
                  )}
                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-300 flex items-center justify-center">
-                    <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">{social.handle || "@kbdf.ph"}</span>
+                    <span className="text-white opacity-0 group-hover:opacity-100 transition-opacity duration-300">{social.handle || "@kbdfluxuryshop"}</span>
                  </div>
               </a>
             ))}

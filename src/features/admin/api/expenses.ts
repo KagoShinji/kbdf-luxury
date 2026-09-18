@@ -47,6 +47,8 @@ export async function fetchExpensesPaginated(params: {
   search?: string;
   sortBy?: string;
   sortDir?: 'asc' | 'desc';
+  startDate?: string | null;
+  endDate?: string | null;
 }) {
   const tid = params.tenantId ?? TENANT_ID;
   const from = (params.page - 1) * params.pageSize;
@@ -60,6 +62,13 @@ export async function fetchExpensesPaginated(params: {
   if (params.search && params.search.trim()) {
     const q = params.search.trim();
     query = query.or(`title.ilike.%${q}%,description.ilike.%${q}%`);
+  }
+
+  if (params.startDate) {
+    query = query.gte('date', params.startDate);
+  }
+  if (params.endDate) {
+    query = query.lte('date', params.endDate);
   }
 
   const sortBy = params.sortBy || 'date';

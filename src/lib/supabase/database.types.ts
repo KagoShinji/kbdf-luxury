@@ -413,6 +413,7 @@ export interface Database {
           total_amount: number;
           down_payment_amount: number;
           remaining_balance: number;
+          monthly_payment_amount: number;
           payment_schedule: 'weekly' | 'monthly' | 'flexible';
           status: 'active' | 'completed' | 'defaulted';
           created_at: string;
@@ -426,6 +427,7 @@ export interface Database {
           total_amount: number;
           down_payment_amount?: number;
           remaining_balance?: number;
+          monthly_payment_amount?: number;
           payment_schedule: 'weekly' | 'monthly' | 'flexible';
           status?: 'active' | 'completed' | 'defaulted';
           created_at?: string;
@@ -472,6 +474,7 @@ export interface Database {
           requested_items: any;
           customer_name: string | null;
           customer_email: string | null;
+          monthly_payment_amount: number | null;
           created_at: string;
           updated_at: string;
         };
@@ -484,6 +487,7 @@ export interface Database {
           requested_items?: any;
           customer_name?: string | null;
           customer_email?: string | null;
+          monthly_payment_amount?: number | null;
           created_at?: string;
           updated_at?: string;
         };

@@ -14,6 +14,7 @@ import { ImageUploadInput } from "../admin/components/ImageUploadInput";
 import { useFavorites } from "../favorites/FavoritesContext";
 import { fetchProvinces, fetchCities, fetchBarangays } from "../cart/locationData";
 import type { PSGCLocation } from "../cart/locationData";
+import { sanitizePhPhone, isValidPhPhone, handlePhoneKeyDown } from "../../lib/utils/phone";
 
 interface OrderItem {
   id: string;
@@ -58,6 +59,7 @@ interface LeewayAccount {
   total_amount: number;
   down_payment_amount: number;
   remaining_balance: number;
+  monthly_payment_amount: number;
   payment_schedule: 'weekly' | 'monthly' | 'flexible';
   status: 'active' | 'completed' | 'defaulted';
   created_at: string;
@@ -148,7 +150,7 @@ export function CustomerOrdersPage() {
           } else if (data) {
             if (data.first_name) setProfileFirstName(data.first_name);
             if (data.last_name) setProfileLastName(data.last_name);
-            if (data.phone) setProfilePhone(data.phone);
+            if (data.phone) setProfilePhone(sanitizePhPhone(data.phone));
             if (data.fb_link) setProfileFbLink(data.fb_link);
             if (data.province) setProfileProvince(data.province);
             if (data.city) setProfileCity(data.city);
@@ -262,9 +264,8 @@ export function CustomerOrdersPage() {
     e.preventDefault();
     if (!user?.id) return;
 
-    const cleanedPhone = profilePhone.replace(/\D/g, '');
-    if (cleanedPhone.length !== 11) {
-      showError("Contact number must be exactly 11 digits.");
+    if (!isValidPhPhone(profilePhone)) {
+      showError("Contact number must be a valid 11-digit Philippine mobile number starting with 09 (e.g. 09171234567).");
       return;
     }
 
@@ -604,6 +605,16 @@ export function CustomerOrdersPage() {
     } catch (err: any) {
       showError("Failed to update receipt: " + (err.message || err));
     }
+  };
+
+  const handleOpenSubmitModal = (account: LeewayAccount) => {
+    setSelectedAccountId(account.id);
+    const amountDue = account.monthly_payment_amount > 0
+      ? Math.min(account.monthly_payment_amount, account.remaining_balance)
+      : account.remaining_balance;
+    setPaymentAmount(amountDue);
+    setSubmitReceiptUrl("");
+    setIsSubmitModalOpen(true);
   };
 
   const handleSubmitLeewayPayment = async (e: React.FormEvent) => {
@@ -1166,6 +1177,15 @@ export function CustomerOrdersPage() {
                               />
                             </div>
 
+                            <div className="flex justify-between items-center text-xs pt-1 border-t border-surface-light">
+                              <span className="text-typography-muted">Monthly Due:</span>
+                              <span className="font-bold text-brand-pink">
+                                {account.monthly_payment_amount > 0
+                                  ? `${currencySymbol}${Number(account.monthly_payment_amount).toLocaleString()} / mo`
+                                  : 'Set by Store'}
+                              </span>
+                            </div>
+
                             <div className="flex justify-between items-end pt-1">
                               <div>
                                 <span className="text-[9px] uppercase text-typography-muted block">Remaining Balance</span>
@@ -1174,10 +1194,7 @@ export function CustomerOrdersPage() {
 
                               {account.status === 'active' && (
                                 <button
-                                  onClick={() => {
-                                    setSelectedAccountId(account.id);
-                                    setIsSubmitModalOpen(true);
-                                  }}
+                                  onClick={() => handleOpenSubmitModal(account)}
                                   className="bg-brand-navy hover:bg-brand-pink text-white rounded-lg px-3.5 py-1.5 text-[10px] font-bold uppercase tracking-wider transition-all"
                                 >
                                   Pay Installment
@@ -1458,18 +1475,42 @@ export function CustomerOrdersPage() {
                     />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold uppercase text-typography-primary">Contact Number *</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold uppercase text-typography-primary">Contact Number *</label>
+                      <span className="text-[9px] text-typography-muted">09XXXXXXXXX</span>
+                    </div>
                     <input 
                       type="tel" 
+                      inputMode="numeric"
                       required 
                       maxLength={11}
-                      pattern="\d{11}"
+                      pattern="09[0-9]{9}"
                       value={profilePhone} 
-                      onChange={e => setProfilePhone(e.target.value.replace(/\D/g, ''))} 
+                      onChange={e => setProfilePhone(sanitizePhPhone(e.target.value))} 
+                      onKeyDown={handlePhoneKeyDown}
                       placeholder="09171234567" 
-                      title="Contact number must be exactly 11 digits"
-                      className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary placeholder:text-typography-muted/40 outline-none focus:border-brand-pink" 
+                      title="Contact number must be a valid 11-digit Philippine mobile number starting with 09"
+                      className={`bg-surface-offWhite border ${
+                        profilePhone && !isValidPhPhone(profilePhone)
+                          ? 'border-amber-400 focus:border-amber-500'
+                          : profilePhone && isValidPhPhone(profilePhone)
+                          ? 'border-emerald-500/50 focus:border-emerald-600'
+                          : 'border-surface-light focus:border-brand-pink'
+                      } rounded-xl px-4 py-3 text-sm text-typography-primary placeholder:text-typography-muted/40 outline-none transition-colors`} 
                     />
+                    {profilePhone && (
+                      <div className="text-[11px] mt-0.5">
+                        {!profilePhone.startsWith('09') && (
+                          <span className="text-red-500 font-medium">Must start with 09 (e.g. 09171234567)</span>
+                        )}
+                        {profilePhone.startsWith('09') && profilePhone.length < 11 && (
+                          <span className="text-amber-600 font-medium">Must be exactly 11 digits ({profilePhone.length}/11)</span>
+                        )}
+                        {isValidPhPhone(profilePhone) && (
+                          <span className="text-emerald-600 font-medium flex items-center gap-1">✓ Valid PH mobile number</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1.5 sm:col-span-2">
                     <label className="text-[10px] font-bold uppercase text-typography-primary">Facebook Profile Link (Optional)</label>
@@ -1643,7 +1684,19 @@ export function CustomerOrdersPage() {
                 <label className="text-[10px] font-bold uppercase text-typography-primary">Select Installment Plan *</label>
                 <select
                   value={selectedAccountId}
-                  onChange={e => setSelectedAccountId(e.target.value)}
+                  onChange={e => {
+                    const accId = e.target.value;
+                    setSelectedAccountId(accId);
+                    const acc = leewayAccounts.find(a => a.id === accId);
+                    if (acc) {
+                      const amountDue = acc.monthly_payment_amount > 0
+                        ? Math.min(acc.monthly_payment_amount, acc.remaining_balance)
+                        : acc.remaining_balance;
+                      setPaymentAmount(amountDue);
+                    } else {
+                      setPaymentAmount(0);
+                    }
+                  }}
                   required
                   className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary outline-none focus:border-brand-pink"
                 >
@@ -1658,19 +1711,28 @@ export function CustomerOrdersPage() {
                 </select>
               </div>
 
-              {/* Amount input */}
+              {/* Amount display */}
               <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase text-typography-primary">Payment Amount (PHP) *</label>
-                <input
-                  type="number"
-                  value={paymentAmount || ''}
-                  onChange={e => setPaymentAmount(Math.max(0.01, Number(e.target.value)))}
-                  required
-                  min="0.01"
-                  step="0.01"
-                  placeholder="e.g. 1500"
-                  className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary placeholder:text-typography-muted/40 outline-none focus:border-brand-pink"
-                />
+                <label className="text-[10px] font-bold uppercase text-typography-primary">Required Monthly Installment Amount</label>
+                <div className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 flex items-center justify-between">
+                  <span className="text-base font-bold text-typography-primary font-mono">{currencySymbol}{Number(paymentAmount).toLocaleString()}</span>
+                  {(() => {
+                    const acc = leewayAccounts.find(a => a.id === selectedAccountId);
+                    if (acc && acc.monthly_payment_amount > 0 && acc.remaining_balance <= acc.monthly_payment_amount) {
+                      return <span className="text-[9px] uppercase font-bold text-brand-pink bg-brand-pink/10 px-2 py-0.5 rounded">Final Balance</span>;
+                    }
+                    return <span className="text-[9px] uppercase font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">Monthly Installment</span>;
+                  })()}
+                </div>
+                <p className="text-[10px] text-typography-muted italic">
+                  {(() => {
+                    const acc = leewayAccounts.find(a => a.id === selectedAccountId);
+                    if (acc && acc.monthly_payment_amount > 0) {
+                      return `Fixed monthly payment amount configured by the store administrator (${currencySymbol}${acc.monthly_payment_amount.toLocaleString()} / month).`;
+                    }
+                    return "Total outstanding balance required for this plan.";
+                  })()}
+                </p>
               </div>
 
               {/* Digital payment instructions */}

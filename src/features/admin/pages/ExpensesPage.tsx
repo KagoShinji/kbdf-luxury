@@ -5,6 +5,8 @@ import { fetchExpensesPaginated, createExpense, updateExpense, deleteExpense } f
 import type { Expense } from '../../../lib/supabase/database.types';
 import { DataTable } from '../components/DataTable';
 import type { Column } from '../components/DataTable';
+import { DateRangeFilter, DEFAULT_DATE_RANGE, getDateRangeBounds } from '../components/DateRangeFilter';
+import type { DateRangeValue } from '../components/DateRangeFilter';
 import { Plus, Edit2, Trash2, Receipt, Calendar, Tag, ArrowUpRight } from 'lucide-react';
 import { PermissionGate } from '../components/PermissionGate';
 import { ExpenseFormModal } from '../components/ExpenseFormModal';
@@ -36,30 +38,36 @@ export function ExpensesPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
 
+  // Date Range filter state
+  const [dateRange, setDateRange] = useState<DateRangeValue>(DEFAULT_DATE_RANGE);
+
   const tenantId = adminUser?.tenant_id ?? TENANT_ID;
   const currency = tenant?.currency_symbol ?? '₱';
 
-  // Reset page when search changes
+  // Reset page when search or dateRange changes
   useEffect(() => {
     setPage(1);
-  }, [search]);
+  }, [search, dateRange]);
 
   useEffect(() => {
     if (tenantId) {
       loadExpenses();
     }
-  }, [tenantId, page, search, sortBy, sortDir]);
+  }, [tenantId, page, search, sortBy, sortDir, dateRange]);
 
   async function loadExpenses() {
     setIsLoading(true);
     try {
+      const { startDateStr, endDateStr } = getDateRangeBounds(dateRange);
       const res = await fetchExpensesPaginated({
         tenantId,
         page,
         pageSize,
         search,
         sortBy,
-        sortDir
+        sortDir,
+        startDate: startDateStr,
+        endDate: endDateStr,
       });
       setExpenses(res.data);
       setTotalCount(res.totalCount);
@@ -257,14 +265,23 @@ export function ExpensesPage() {
           <p className="text-white/40 text-xs mt-0.5">Log operational costs, supplier payments, shipping costs, and utility expenses.</p>
         </div>
 
-        <PermissionGate module="expenses" action="create">
-          <button
-            onClick={handleAddClick}
-            className="flex items-center justify-center gap-2 bg-gradient-to-r from-[#fb7a90] to-[#f16881] text-white rounded-xl px-4 py-2.5 font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all self-start sm:self-auto"
-          >
-            <Plus className="w-4 h-4" /> Record Expense
-          </button>
-        </PermissionGate>
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+          {/* Date Range Filter */}
+          <DateRangeFilter
+            value={dateRange}
+            onChange={setDateRange}
+            align="right"
+          />
+
+          <PermissionGate module="expenses" action="create">
+            <button
+              onClick={handleAddClick}
+              className="flex items-center justify-center gap-2 bg-gradient-to-r from-[#fb7a90] to-[#f16881] text-white rounded-xl px-4 py-2.5 font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all"
+            >
+              <Plus className="w-4 h-4" /> Record Expense
+            </button>
+          </PermissionGate>
+        </div>
       </div>
 
       {/* Metrics Summary Row */}

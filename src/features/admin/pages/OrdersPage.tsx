@@ -4,6 +4,8 @@ import { usePermissions } from '../hooks/usePermissions';
 import { supabase, TENANT_ID } from '../../../lib/supabase/supabaseClient';
 import { DataTable } from '../components/DataTable';
 import type { Column } from '../components/DataTable';
+import { DateRangeFilter, DEFAULT_DATE_RANGE, isDateInRange } from '../components/DateRangeFilter';
+import type { DateRangeValue } from '../components/DateRangeFilter';
 import { ShoppingBag, Eye, CheckCircle, Truck, FileCheck, XCircle, Info, Calendar, Trash2, Store } from 'lucide-react';
 import { useNotification } from '../../../core/context/NotificationContext';
 
@@ -45,7 +47,7 @@ interface Order {
 
 export function OrdersPage() {
   const { adminUser, tenant } = useAdminUser();
-  const { canEdit } = usePermissions('orders');
+  const { canEdit, canDelete } = usePermissions('orders');
   const { showSuccess, showError, showConfirm } = useNotification();
 
   const [orders, setOrders] = useState<Order[]>([]);
@@ -55,7 +57,9 @@ export function OrdersPage() {
   const [notes, setNotes] = useState('');
   const [pickupLocation, setPickupLocation] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [dateFilter, setDateFilter] = useState<'all' | 'today' | 'week'>('all');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(DEFAULT_DATE_RANGE);
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const tenantId = adminUser?.tenant_id ?? TENANT_ID;
   const currency = tenant?.currency_symbol ?? '₱';
@@ -136,7 +140,7 @@ export function OrdersPage() {
   }
 
   async function handleDeleteOrder(orderId: string) {
-    if (!canEdit) return;
+    if (!canDelete) return;
     const confirmed = await showConfirm('Are you sure you want to delete this order? This action cannot be undone.');
     if (!confirmed) return;
 
@@ -153,9 +157,41 @@ export function OrdersPage() {
         setIsModalOpen(false);
         setSelectedOrder(null);
       }
+      setSelectedIds(prev => prev.filter(id => id !== orderId));
       showSuccess('Order deleted successfully.');
     } catch (err: any) {
       showError('Failed to delete order: ' + (err.message || err));
+    }
+  }
+
+  async function handleBulkDeleteOrders() {
+    if (!canDelete || selectedIds.length === 0) return;
+    const confirmed = await showConfirm(
+      `Are you sure you want to delete the ${selectedIds.length} selected order(s)? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setIsLoading(true);
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .delete()
+        .in('id', selectedIds);
+
+      if (error) throw error;
+
+      setOrders(prev => prev.filter(o => !selectedIds.includes(o.id)));
+      if (selectedOrder && selectedIds.includes(selectedOrder.id)) {
+        setIsModalOpen(false);
+        setSelectedOrder(null);
+      }
+      showSuccess(`Successfully deleted ${selectedIds.length} order(s).`);
+      setSelectedIds([]);
+      setIsBulkMode(false);
+    } catch (err: any) {
+      showError('Failed to delete selected orders: ' + (err.message || err));
+    } finally {
+      setIsLoading(false);
     }
   }
 
@@ -164,18 +200,9 @@ export function OrdersPage() {
     // 1. Status Filter
     if (statusFilter !== 'all' && o.status !== statusFilter) return false;
 
-    // 2. Date Filter
-    if (dateFilter === 'today') {
-      const orderDate = new Date(o.created_at);
-      const today = new Date();
-      return orderDate.toDateString() === today.toDateString();
-    }
-    if (dateFilter === 'week') {
-      const orderDate = new Date(o.created_at);
-      const oneWeekAgo = new Date();
-      oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-      return orderDate >= oneWeekAgo;
-    }
+    // 2. Date Range Filter
+    if (!isDateInRange(o.created_at, dateRange)) return false;
+
     return true;
   });
 
@@ -293,8 +320,41 @@ export function OrdersPage() {
           <p className="text-white/40 text-xs mt-0.5">Verify digital transfer receipts, shipping address details, and update tracking progress.</p>
         </div>
 
-        {/* Filters */}
-        <div className="flex flex-wrap gap-2.5 self-start sm:self-auto">
+        {/* Filters and Actions */}
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-auto">
+          {/* Multiple Delete Buttons */}
+          {canDelete && (
+            <>
+              {!isBulkMode ? (
+                <button
+                  onClick={() => setIsBulkMode(true)}
+                  className="flex items-center justify-center gap-2 bg-[#1f2937] hover:bg-[#374151] border border-white/10 text-white rounded-xl px-4 py-2.5 font-semibold text-xs hover:opacity-90 active:scale-[0.98] transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-white/70" /> Multiple Delete
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleBulkDeleteOrders}
+                    disabled={selectedIds.length === 0}
+                    className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-4 py-2.5 font-semibold text-xs active:scale-[0.98] transition-all"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedIds.length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsBulkMode(false);
+                      setSelectedIds([]);
+                    }}
+                    className="flex items-center justify-center gap-2 bg-[#1f2937] hover:bg-[#374151] border border-white/10 text-white rounded-xl px-4 py-2.5 font-semibold text-xs active:scale-[0.98] transition-all"
+                  >
+                    Cancel Selection
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
           {/* Status Filter */}
           <select
             value={statusFilter}
@@ -311,21 +371,59 @@ export function OrdersPage() {
           </select>
 
           {/* Date Range Filter */}
-          <select
-            value={dateFilter}
-            onChange={e => setDateFilter(e.target.value as any)}
-            className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-2.5 text-xs font-semibold text-white outline-none focus:border-[#fb7a90]/50"
-          >
-            <option value="all">All Time</option>
-            <option value="today">Today's Orders</option>
-            <option value="week">Past 7 Days</option>
-          </select>
+          <DateRangeFilter
+            value={dateRange}
+            onChange={setDateRange}
+            align="right"
+          />
         </div>
       </div>
 
       {/* Table */}
       <DataTable
-        columns={columns}
+        columns={[
+          ...(isBulkMode
+            ? [
+                {
+                  key: 'selection',
+                  label: (
+                    <div className="flex items-center justify-center">
+                      <input
+                        type="checkbox"
+                        checked={filteredOrders.length > 0 && selectedIds.length === filteredOrders.length}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(filteredOrders.map(item => item.id));
+                          } else {
+                            setSelectedIds([]);
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-white/10 text-[#fb7a90] bg-[#0f1117] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                      />
+                    </div>
+                  ),
+                  render: (row: Order) => (
+                    <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(row.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedIds(prev => [...prev, row.id]);
+                          } else {
+                            setSelectedIds(prev => prev.filter(id => id !== row.id));
+                          }
+                        }}
+                        className="w-4 h-4 rounded border-white/10 text-[#fb7a90] bg-[#0f1117] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+                      />
+                    </div>
+                  ),
+                  width: '50px',
+                },
+              ]
+            : []),
+          ...columns,
+        ]}
         data={filteredOrders}
         isLoading={isLoading}
         searchPlaceholder="Search tracking number or customer..."

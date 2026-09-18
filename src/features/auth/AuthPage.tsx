@@ -13,7 +13,7 @@ export function AuthPage() {
   const navigate = useNavigate();
   const { showInfo } = useNotification();
   const { tenant } = useTenant();
-  
+
   const settings = (tenant?.store_settings as any) || {};
   const authBgUrl = settings.branding?.auth_bg_url;
 
@@ -66,7 +66,7 @@ export function AuthPage() {
     setIsSubmitting(true);
     setErrorMsg("");
     setSuccessMsg("");
- 
+
     try {
       if (isLogin) {
         await signIn(email, password, captchaToken || undefined);
@@ -74,7 +74,7 @@ export function AuthPage() {
         setTimeout(() => navigate("/shop"), 1000);
       } else {
         await signUp(email, password, fullName, captchaToken || undefined);
-        setSuccessMsg("Registration successful! Please check your email for confirmation link.");
+        setSuccessMsg("Registration successful! You may now sign in to your account.");
         setIsLogin(true);
         // Clear registration states
         setFullName("");
@@ -112,7 +112,7 @@ export function AuthPage() {
           </p>
         </div>
       </div>
-      
+
       {/* Right side Form */}
       <div className="w-full lg:w-1/2 flex items-center justify-center px-6 py-12">
         <div className="max-w-md w-full">
@@ -144,37 +144,37 @@ export function AuthPage() {
               {!isLogin && (
                 <div className="flex flex-col gap-2">
                   <label className="text-[10px] uppercase tracking-widest text-typography-primary font-bold">Full Name *</label>
-                  <input 
-                    type="text" 
+                  <input
+                    type="text"
                     value={fullName}
                     onChange={(e) => setFullName(e.target.value)}
                     required
                     placeholder="Jane Doe"
-                    className="w-full border-b border-surface-light py-2 bg-transparent outline-none focus:border-brand-pink transition-colors text-sm text-typography-primary" 
+                    className="w-full border-b border-surface-light py-2 bg-transparent outline-none focus:border-brand-pink transition-colors text-sm text-typography-primary"
                   />
                 </div>
               )}
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] uppercase tracking-widest text-typography-primary font-bold">Email Address *</label>
-                <input 
-                  type="email" 
+                <input
+                  type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
                   placeholder="jane.doe@example.com"
-                  className="w-full border-b border-surface-light py-2 bg-transparent outline-none focus:border-brand-pink transition-colors text-sm text-typography-primary" 
+                  className="w-full border-b border-surface-light py-2 bg-transparent outline-none focus:border-brand-pink transition-colors text-sm text-typography-primary"
                 />
               </div>
               <div className="flex flex-col gap-2">
                 <label className="text-[10px] uppercase tracking-widest text-typography-primary font-bold">Password *</label>
                 <div className="relative">
-                  <input 
-                    type={showPassword ? "text" : "password"} 
+                  <input
+                    type={showPassword ? "text" : "password"}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required
                     placeholder="••••••••"
-                    className="w-full border-b border-surface-light py-2 pr-10 bg-transparent outline-none focus:border-brand-pink transition-colors text-sm text-typography-primary" 
+                    className="w-full border-b border-surface-light py-2 pr-10 bg-transparent outline-none focus:border-brand-pink transition-colors text-sm text-typography-primary"
                   />
                   <button
                     type="button"
@@ -207,13 +207,13 @@ export function AuthPage() {
                 <div className="flex flex-col gap-2">
                   <label className="text-[10px] uppercase tracking-widest text-typography-primary font-bold">Confirm Password *</label>
                   <div className="relative">
-                    <input 
-                      type={showConfirmPassword ? "text" : "password"} 
+                    <input
+                      type={showConfirmPassword ? "text" : "password"}
                       value={confirmPassword}
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       required
                       placeholder="••••••••"
-                      className="w-full border-b border-surface-light py-2 pr-10 bg-transparent outline-none focus:border-brand-pink transition-colors text-sm text-typography-primary" 
+                      className="w-full border-b border-surface-light py-2 pr-10 bg-transparent outline-none focus:border-brand-pink transition-colors text-sm text-typography-primary"
                     />
                     <button
                       type="button"
@@ -226,14 +226,14 @@ export function AuthPage() {
                 </div>
               )}
               {siteKey && (
-                <Turnstile 
-                  onVerify={setCaptchaToken} 
+                <Turnstile
+                  onVerify={setCaptchaToken}
                   resetTrigger={turnstileResetCount}
                 />
               )}
- 
-              <button 
-                type="submit" 
+
+              <button
+                type="submit"
                 disabled={isSubmitting || (!!siteKey && !captchaToken)}
                 className="bg-brand-navy text-surface-white px-8 py-4 text-xs uppercase tracking-widest hover:bg-brand-pink transition-colors w-full mt-4 font-bold rounded-xl flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
@@ -251,23 +251,23 @@ export function AuthPage() {
               <span className="relative bg-surface-white px-4 text-[10px] uppercase text-typography-muted font-bold tracking-widest">Or Continue With</span>
             </div>
 
-            <button 
-              type="button" 
+            <button
+              type="button"
               onClick={handleGoogleSignIn}
               className="flex items-center justify-center gap-3 bg-surface-offWhite hover:bg-surface-light text-typography-primary w-full py-4 text-xs uppercase tracking-widest font-bold rounded-xl border border-surface-light transition-colors"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.69c-.29 1.5-.1.88-1.5 2.2l3.43 2.66c2-1.84 3.12-4.56 3.12-7.69z"/>
-                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.43-2.66c-.95.64-2.17 1.02-3.5 1.02-2.7 0-5-1.82-5.81-4.28L1.69 18.43C3.69 22.42 7.8 24 12 24z"/>
-                <path fill="#FBBC05" d="M6.19 15.17A7.17 7.17 0 0 1 5.75 12c0-1.1.2-2.17.58-3.17L2.1 5.7A11.95 11.95 0 0 0 0 12c0 2.29.66 4.43 1.81 6.25l4.38-3.08z"/>
-                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.94 1.19 15.22 0 12 0 7.8 0 3.69 2.58 1.69 6.57l4.5 3.5c.81-2.46 3.11-4.28 5.81-4.28z"/>
+                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.69c-.29 1.5-.1.88-1.5 2.2l3.43 2.66c2-1.84 3.12-4.56 3.12-7.69z" />
+                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.43-2.66c-.95.64-2.17 1.02-3.5 1.02-2.7 0-5-1.82-5.81-4.28L1.69 18.43C3.69 22.42 7.8 24 12 24z" />
+                <path fill="#FBBC05" d="M6.19 15.17A7.17 7.17 0 0 1 5.75 12c0-1.1.2-2.17.58-3.17L2.1 5.7A11.95 11.95 0 0 0 0 12c0 2.29.66 4.43 1.81 6.25l4.38-3.08z" />
+                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.94 1.19 15.22 0 12 0 7.8 0 3.69 2.58 1.69 6.57l4.5 3.5c.81-2.46 3.11-4.28 5.81-4.28z" />
               </svg>
               Google (Coming Soon)
             </button>
 
             <div className="mt-8 text-center">
-              <button 
-                onClick={() => setIsLogin(!isLogin)} 
+              <button
+                onClick={() => setIsLogin(!isLogin)}
                 className="text-[10px] uppercase tracking-widest text-brand-navy border-b border-brand-navy pb-1 font-bold hover:text-brand-pink hover:border-brand-pink transition-colors"
               >
                 {isLogin ? "Create an account instead" : "Already have an account? Sign in"}

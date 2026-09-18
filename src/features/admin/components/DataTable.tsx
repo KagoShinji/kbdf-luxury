@@ -11,12 +11,50 @@ export interface Column<T> {
   width?: string;
 }
 
+function matchesSearch(value: unknown, query: string, depth = 0): boolean {
+  if (value === null || value === undefined) return false;
+  if (depth > 6) return false;
+
+  if (typeof value === 'string') {
+    return value.toLowerCase().includes(query);
+  }
+
+  if (typeof value === 'number') {
+    return String(value).toLowerCase().includes(query);
+  }
+
+  if (typeof value === 'boolean') {
+    return String(value).toLowerCase().includes(query);
+  }
+
+  if (value instanceof Date) {
+    return (
+      value.toISOString().toLowerCase().includes(query) ||
+      value.toLocaleDateString().toLowerCase().includes(query)
+    );
+  }
+
+  if (Array.isArray(value)) {
+    return value.some(item => matchesSearch(item, query, depth + 1));
+  }
+
+  if (typeof value === 'object') {
+    if ('$$typeof' in (value as any)) return false;
+    return Object.values(value as Record<string, unknown>).some(item =>
+      matchesSearch(item, query, depth + 1)
+    );
+  }
+
+  return false;
+}
+
 interface DataTableProps<T extends { id: string }> {
   columns: Column<T>[];
   data: T[];
   isLoading?: boolean;
   searchable?: boolean;
   searchPlaceholder?: string;
+  customSearch?: (row: T, query: string) => boolean;
   onRowClick?: (row: T) => void;
   emptyMessage?: string;
   pageSize?: number;
@@ -35,6 +73,7 @@ export function DataTable<T extends { id: string }>({
   isLoading = false,
   searchable = true,
   searchPlaceholder = 'Search...',
+  customSearch,
   onRowClick,
   emptyMessage = 'No records found.',
   pageSize = 10,
@@ -54,14 +93,12 @@ export function DataTable<T extends { id: string }>({
 
   const filtered = useMemo(() => {
     if (serverSide) return data;
-    if (!search.trim()) return data;
-    const q = search.toLowerCase();
+    const q = search.trim().toLowerCase();
+    if (!q) return data;
     return data.filter(row =>
-      Object.values(row as Record<string, unknown>).some(v =>
-        String(v ?? '').toLowerCase().includes(q)
-      )
+      customSearch ? customSearch(row, q) : matchesSearch(row, q)
     );
-  }, [data, search, serverSide]);
+  }, [data, search, serverSide, customSearch]);
 
   const sorted = useMemo(() => {
     if (serverSide) return data;

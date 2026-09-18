@@ -5,6 +5,8 @@ import { fetchLeadsPaginated, updateLead, deleteLead } from '../api/leads';
 import type { Lead } from '../../../lib/supabase/database.types';
 import { DataTable } from '../components/DataTable';
 import type { Column } from '../components/DataTable';
+import { DateRangeFilter, DEFAULT_DATE_RANGE, getDateRangeBounds } from '../components/DateRangeFilter';
+import type { DateRangeValue } from '../components/DateRangeFilter';
 import { MessageSquare, Trash2, Filter } from 'lucide-react';
 import { LeadDetailDrawer } from '../components/LeadDetailDrawer';
 import { TENANT_ID } from '../../../lib/supabase/supabaseClient';
@@ -27,6 +29,7 @@ export function LeadsPage() {
 
   // Filter
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [dateRange, setDateRange] = useState<DateRangeValue>(DEFAULT_DATE_RANGE);
 
   // Detail Drawer State
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -37,17 +40,18 @@ export function LeadsPage() {
   // Reset page when search or filters change
   useEffect(() => {
     setPage(1);
-  }, [search, statusFilter]);
+  }, [search, statusFilter, dateRange]);
 
   useEffect(() => {
     if (tenantId) {
       loadLeads();
     }
-  }, [tenantId, page, search, sortBy, sortDir, statusFilter]);
+  }, [tenantId, page, search, sortBy, sortDir, statusFilter, dateRange]);
 
   async function loadLeads() {
     setIsLoading(true);
     try {
+      const { startIso, endIso } = getDateRangeBounds(dateRange);
       const res = await fetchLeadsPaginated({
         tenantId,
         page,
@@ -55,7 +59,9 @@ export function LeadsPage() {
         search,
         sortBy,
         sortDir,
-        statusFilter
+        statusFilter,
+        startDate: startIso,
+        endDate: endIso
       });
       setLeads(res.data);
       setTotalCount(res.totalCount);
@@ -188,24 +194,33 @@ export function LeadsPage() {
       </div>
 
       {/* Filter panel */}
-      <div className="bg-[#111827] border border-white/5 rounded-2xl p-4 flex flex-wrap gap-4 items-center">
-        <div className="flex items-center gap-2 text-white/40 text-xs uppercase tracking-wider font-semibold">
-          <Filter className="w-4 h-4" /> Filter Status
+      <div className="bg-[#111827] border border-white/5 rounded-2xl p-4 flex flex-wrap gap-4 items-center justify-between">
+        <div className="flex flex-wrap items-center gap-4">
+          <div className="flex items-center gap-2 text-white/40 text-xs uppercase tracking-wider font-semibold">
+            <Filter className="w-4 h-4" /> Status
+          </div>
+          <div className="flex flex-col gap-1">
+            <select
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+              className="bg-[#0f1117] border border-white/10 rounded-xl px-3.5 py-2 text-xs font-semibold text-white outline-none focus:border-[#fb7a90]/50"
+            >
+              <option value="all">All Statuses</option>
+              <option value="new">New</option>
+              <option value="contacted">Contacted</option>
+              <option value="qualified">Qualified</option>
+              <option value="converted">Converted</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
         </div>
-        <div className="flex flex-col gap-1">
-          <select
-            value={statusFilter}
-            onChange={e => setStatusFilter(e.target.value)}
-            className="bg-[#0f1117] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-[#fb7a90]/50"
-          >
-            <option value="all">All Statuses</option>
-            <option value="new">New</option>
-            <option value="contacted">Contacted</option>
-            <option value="qualified">Qualified</option>
-            <option value="converted">Converted</option>
-            <option value="archived">Archived</option>
-          </select>
-        </div>
+
+        {/* Date Range Filter */}
+        <DateRangeFilter
+          value={dateRange}
+          onChange={setDateRange}
+          align="right"
+        />
       </div>
 
       {/* Main Table */}

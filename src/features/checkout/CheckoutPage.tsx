@@ -10,6 +10,7 @@ import { useNotification } from '../../core/context/NotificationContext';
 import { Check, X, Clipboard, CreditCard, ShoppingBag, MapPin, Truck, ChevronRight, Download, Loader2, User, LogIn, Clock, AlertTriangle, Store, ChevronDown } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Turnstile } from '../../ui/Turnstile';
+import { sanitizePhPhone, isValidPhPhone, handlePhoneKeyDown } from '../../lib/utils/phone';
 
 interface PaymentMethod {
   id: string;
@@ -189,8 +190,24 @@ export function CheckoutPage() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Step 3: Payment Option
-  const [selectedMethodId, setSelectedMethodId] = useState<string>('walk_in');
+  const [selectedMethodId, setSelectedMethodId] = useState<string>('');
   const [proofOfPaymentUrl, setProofOfPaymentUrl] = useState('');
+
+  const handleDeliveryMethodChange = (method: 'standard' | 'pickup') => {
+    setDeliveryMethod(method);
+    if (method === 'standard') {
+      if (selectedMethodId === 'walk_in') {
+        setSelectedMethodId(paymentMethods[0]?.id || '');
+      }
+      if (leewayPaymentMethodId === 'walk_in') {
+        setLeewayPaymentMethodId(paymentMethods[0]?.id || '');
+      }
+    } else if (method === 'pickup') {
+      if (!selectedMethodId) {
+        setSelectedMethodId('walk_in');
+      }
+    }
+  };
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -283,7 +300,7 @@ export function CheckoutPage() {
           if (draft.firstName) setFirstName(draft.firstName);
           if (draft.lastName) setLastName(draft.lastName);
           if (draft.email) setEmail(draft.email);
-          if (draft.phone) setPhone(draft.phone);
+          if (draft.phone) setPhone(sanitizePhPhone(draft.phone));
           if (draft.fbLink) setFbLink(draft.fbLink);
           if (draft.province) setProvince(draft.province);
           if (draft.city) setCity(draft.city);
@@ -317,7 +334,7 @@ export function CheckoutPage() {
               if (data.first_name) setFirstName(data.first_name);
               if (data.last_name) setLastName(data.last_name);
               if (data.email) setEmail(data.email);
-              if (data.phone) setPhone(data.phone);
+              if (data.phone) setPhone(sanitizePhPhone(data.phone));
               if (data.fb_link) setFbLink(data.fb_link);
               if (data.province) setProvince(data.province);
               if (data.city) setCity(data.city);
@@ -375,6 +392,15 @@ export function CheckoutPage() {
   }, [user]);
 
   const handleAdvanceFromStep1 = useCallback(async () => {
+    if (!firstName.trim() || !lastName.trim() || !email.trim()) {
+      showError('Please fill in your first name, last name, and email address.');
+      return;
+    }
+    if (!isValidPhPhone(phone)) {
+      showError('Please enter a valid 11-digit Philippine mobile number starting with 09 (e.g., 09171234567).');
+      return;
+    }
+
     setIsReserving(true);
     try {
       const itemsPayload = items.map(i => ({
@@ -409,7 +435,7 @@ export function CheckoutPage() {
     } finally {
       setIsReserving(false);
     }
-  }, [items, tenantId, sessionId]);
+  }, [firstName, lastName, email, phone, items, tenantId, sessionId, showError]);
 
   const formatSecsLeft = (secs: number) => {
     const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -420,8 +446,9 @@ export function CheckoutPage() {
   // Leeway states
   const [leewaySchedule, setLeewaySchedule] = useState<'weekly' | 'monthly' | 'flexible'>('weekly');
   const [leewayDownPayment, setLeewayDownPayment] = useState<number>(0);
-  const [leewayPaymentMethodId, setLeewayPaymentMethodId] = useState<string>('walk_in');
+  const [leewayPaymentMethodId, setLeewayPaymentMethodId] = useState<string>('');
   const [leewayRequestedItems, setLeewayRequestedItems] = useState<any[]>([]);
+  const [approvedMonthlyAmount, setApprovedMonthlyAmount] = useState<number | null>(null);
   const [isRequestingLeeway, setIsRequestingLeeway] = useState(false);
 
   const isLeewayEligible = items.length > 0 && items.every(item => (item as any).leeway_enabled);
@@ -446,12 +473,13 @@ export function CheckoutPage() {
     if (user && tenantId) {
       supabase
         .from('leeway_requests')
-        .select('status, requested_items')
+        .select('status, requested_items, monthly_payment_amount')
         .eq('tenant_id', tenantId)
         .eq('customer_id', user.id)
         .maybeSingle()
         .then(({ data }: any) => {
           if (data) {
+            setApprovedMonthlyAmount(data.monthly_payment_amount || null);
             const itemsList = data.requested_items || [];
             const mappedItems = itemsList.map((i: any) => ({
               ...i,
@@ -460,10 +488,12 @@ export function CheckoutPage() {
             setLeewayRequestedItems(mappedItems);
           } else {
             setLeewayRequestedItems([]);
+            setApprovedMonthlyAmount(null);
           }
         });
     } else {
       setLeewayRequestedItems([]);
+      setApprovedMonthlyAmount(null);
     }
   }, [user, tenantId]);
 
@@ -576,10 +606,42 @@ export function CheckoutPage() {
         .eq('is_active', true)
         .order('sort_order', { ascending: true })
         .then(({ data }: any) => {
-          if (data) setPaymentMethods(data);
+          if (data) {
+            setPaymentMethods(data);
+            setSelectedMethodId(prev => {
+              if (deliveryMethod === 'standard' && (prev === 'walk_in' || !prev)) {
+                return data[0]?.id || '';
+              }
+              if (deliveryMethod === 'pickup' && !prev) {
+                return 'walk_in';
+              }
+              return prev;
+            });
+            setLeewayPaymentMethodId(prev => {
+              if (deliveryMethod === 'standard' && (prev === 'walk_in' || !prev)) {
+                return data[0]?.id || '';
+              }
+              if (deliveryMethod === 'pickup' && !prev) {
+                return 'walk_in';
+              }
+              return prev;
+            });
+          }
         });
     }
-  }, [tenantId]);
+  }, [tenantId, deliveryMethod]);
+
+  // Synchronize when switching between standard and pickup delivery
+  useEffect(() => {
+    if (deliveryMethod === 'standard') {
+      if (selectedMethodId === 'walk_in') {
+        setSelectedMethodId(paymentMethods[0]?.id || '');
+      }
+      if (leewayPaymentMethodId === 'walk_in') {
+        setLeewayPaymentMethodId(paymentMethods[0]?.id || '');
+      }
+    }
+  }, [deliveryMethod, paymentMethods, selectedMethodId, leewayPaymentMethodId]);
 
   const authPasswordCriteria = [
     { label: "At least 6 characters", met: authPassword.length >= 6 },
@@ -750,7 +812,7 @@ export function CheckoutPage() {
   // Validate fields for Step 1
   const isStep1Valid = () => {
     if (hasOutOfStockItems) return false;
-    const isContactValid = firstName.trim() && lastName.trim() && email.trim() && phone.trim();
+    const isContactValid = firstName.trim() && lastName.trim() && email.trim() && isValidPhPhone(phone);
     if (deliveryMethod === 'pickup') {
       return isContactValid;
     }
@@ -772,13 +834,17 @@ export function CheckoutPage() {
       if (!allCartItemsApproved) return false;
       if (leewayDownPayment < minDownPayment || leewayDownPayment > cartTotal) return false;
       if (leewayDownPayment > 0) {
+        if (deliveryMethod === 'standard' && leewayPaymentMethodId === 'walk_in') return false;
         if (leewayPaymentMethodId !== 'walk_in' && selectedDownPaymentMethod && (selectedDownPaymentMethod.type === 'qr' || selectedDownPaymentMethod.type === 'bank_transfer')) {
           return !!proofOfPaymentUrl;
         }
       }
       return true;
     }
-    if (selectedMethodId === 'walk_in') return true;
+    if (selectedMethodId === 'walk_in') {
+      return deliveryMethod === 'pickup';
+    }
+    if (!selectedMethodId) return false;
     if (selectedPaymentMethod?.type === 'cod') return true;
     return true;
   };
@@ -786,6 +852,10 @@ export function CheckoutPage() {
   // Order Placement
   const handlePlaceOrder = async () => {
     if (items.length === 0) return;
+    if (!isValidPhPhone(phone)) {
+      showError('Please enter a valid 11-digit Philippine mobile number starting with 09 (e.g. 09171234567).');
+      return;
+    }
     setIsPlacing(true);
 
     try {
@@ -864,6 +934,7 @@ export function CheckoutPage() {
           total_amount: orderData.total,
           down_payment_amount: leewayDownPayment,
           remaining_balance: orderData.total,
+          monthly_payment_amount: approvedMonthlyAmount || 0,
           payment_schedule: leewaySchedule,
           status: 'active'
         };
@@ -1212,8 +1283,42 @@ export function CheckoutPage() {
                     <input type="email" value={email} onChange={e => setEmail(e.target.value)} required placeholder="jane.doe@example.com" className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary placeholder:text-typography-muted/40 outline-none focus:border-brand-pink" />
                   </div>
                   <div className="flex flex-col gap-1.5">
-                    <label className="text-[10px] font-bold uppercase text-typography-primary">Contact Number *</label>
-                    <input type="tel" value={phone} onChange={e => setPhone(e.target.value)} required placeholder="+63 917 123 4567" className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 text-sm text-typography-primary placeholder:text-typography-muted/40 outline-none focus:border-brand-pink" />
+                    <div className="flex items-center justify-between">
+                      <label className="text-[10px] font-bold uppercase text-typography-primary">Contact Number *</label>
+                      <span className="text-[9px] text-typography-muted">09XXXXXXXXX</span>
+                    </div>
+                    <input 
+                      type="tel" 
+                      inputMode="numeric"
+                      required 
+                      maxLength={11}
+                      pattern="09[0-9]{9}"
+                      value={phone} 
+                      onChange={e => setPhone(sanitizePhPhone(e.target.value))} 
+                      onKeyDown={handlePhoneKeyDown}
+                      placeholder="09171234567" 
+                      title="Contact number must be an 11-digit Philippine mobile number starting with 09"
+                      className={`bg-surface-offWhite border ${
+                        phone && !isValidPhPhone(phone)
+                          ? 'border-amber-400 focus:border-amber-500'
+                          : phone && isValidPhPhone(phone)
+                          ? 'border-emerald-500/50 focus:border-emerald-600'
+                          : 'border-surface-light focus:border-brand-pink'
+                      } rounded-xl px-4 py-3 text-sm text-typography-primary placeholder:text-typography-muted/40 outline-none transition-colors`} 
+                    />
+                    {phone && (
+                      <div className="text-[11px] mt-0.5">
+                        {!phone.startsWith('09') && (
+                          <span className="text-red-500 font-medium">Must start with 09 (e.g. 09171234567)</span>
+                        )}
+                        {phone.startsWith('09') && phone.length < 11 && (
+                          <span className="text-amber-600 font-medium">Must be exactly 11 digits ({phone.length}/11)</span>
+                        )}
+                        {isValidPhPhone(phone) && (
+                          <span className="text-emerald-600 font-medium flex items-center gap-1">✓ Valid PH mobile number</span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   <div className="flex flex-col gap-1.5 sm:col-span-2">
                     <label className="text-[10px] font-bold uppercase text-typography-primary">Facebook Profile Link (Optional)</label>
@@ -1327,14 +1432,16 @@ export function CheckoutPage() {
                 </div>
 
                 <div className="space-y-3">
-                  {/* Default Walk In */}
-                  <label className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selectedMethodId === 'walk_in' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
-                    <input type="radio" name="paymentMethod" checked={selectedMethodId === 'walk_in'} onChange={() => { setSelectedMethodId('walk_in'); setProofOfPaymentUrl(''); }} className="mt-1" />
-                    <div>
-                      <span className="font-bold text-sm text-typography-primary block">Walk in (Cash on Pick-up / Cash on Delivery)</span>
-                      <span className="text-xs text-typography-muted">Pay with cash upon acquiring the item.</span>
-                    </div>
-                  </label>
+                  {/* Walk In: Only available for Store Pick-up */}
+                  {deliveryMethod === 'pickup' && (
+                    <label className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selectedMethodId === 'walk_in' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
+                      <input type="radio" name="paymentMethod" checked={selectedMethodId === 'walk_in'} onChange={() => { setSelectedMethodId('walk_in'); setProofOfPaymentUrl(''); }} className="mt-1" />
+                      <div>
+                        <span className="font-bold text-sm text-typography-primary block">Walk in (Cash on Pick-up)</span>
+                        <span className="text-xs text-typography-muted">Pay with cash upon picking up your order at the store.</span>
+                      </div>
+                    </label>
+                  )}
 
                   {paymentMethods.map(method => (
                     <label key={method.id} className={`flex items-start gap-4 p-4 rounded-xl border cursor-pointer transition-all ${selectedMethodId === method.id ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
@@ -1393,8 +1500,13 @@ export function CheckoutPage() {
                       if (allApproved) {
                         return (
                           <div className="space-y-5">
-                            <div className="bg-emerald-50 border border-emerald-200 text-emerald-600 p-4 rounded-xl text-xs font-semibold animate-fadeIn">
-                              ✓ Installment pre-approval is Approved for all items in your cart! You can customize your installment details below.
+                            <div className="bg-emerald-50 border border-emerald-200 text-emerald-600 p-4 rounded-xl text-xs font-semibold animate-fadeIn space-y-1">
+                              <p>✓ Installment pre-approval is Approved for all items in your cart!</p>
+                              {approvedMonthlyAmount && approvedMonthlyAmount > 0 && (
+                                <p className="text-[11px] font-bold text-brand-navy">
+                                  Store Approved Monthly Installment: <span className="text-brand-pink">{currencySymbol}{approvedMonthlyAmount.toLocaleString()} / month</span>
+                                </p>
+                              )}
                             </div>
                             {/* 1. Installment schedule */}
                             <div className="flex flex-col gap-1.5 animate-fadeIn">
@@ -1431,13 +1543,15 @@ export function CheckoutPage() {
                                 <label className="text-[10px] font-bold uppercase text-typography-primary block">Select Down Payment Route</label>
                                 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                  <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer text-xs ${leewayPaymentMethodId === 'walk_in' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
-                                    <input type="radio" checked={leewayPaymentMethodId === 'walk_in'} onChange={() => { setLeewayPaymentMethodId('walk_in'); setProofOfPaymentUrl(''); }} />
-                                    <div>
-                                      <strong className="block">Cash / Walk-in</strong>
-                                      <span className="text-typography-muted">Pay downpayment directly in store.</span>
-                                    </div>
-                                  </label>
+                                  {deliveryMethod === 'pickup' && (
+                                    <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer text-xs ${leewayPaymentMethodId === 'walk_in' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
+                                      <input type="radio" checked={leewayPaymentMethodId === 'walk_in'} onChange={() => { setLeewayPaymentMethodId('walk_in'); setProofOfPaymentUrl(''); }} />
+                                      <div>
+                                        <strong className="block">Cash / Walk-in</strong>
+                                        <span className="text-typography-muted">Pay downpayment directly in store upon pick-up.</span>
+                                      </div>
+                                    </label>
+                                  )}
 
                                   {paymentMethods.map(m => (
                                     <label key={m.id} className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer text-xs ${leewayPaymentMethodId === m.id ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
@@ -1733,7 +1847,7 @@ export function CheckoutPage() {
                   <div className="grid grid-cols-2 gap-2">
                     <button 
                       type="button" 
-                      onClick={() => setDeliveryMethod('standard')} 
+                      onClick={() => handleDeliveryMethodChange('standard')} 
                       className={`flex flex-col items-center justify-center py-2 px-3 rounded-xl border text-center transition-all ${deliveryMethod === 'standard' ? 'border-brand-pink bg-brand-pink/5 text-brand-pink font-semibold shadow-sm' : 'border-surface-light text-typography-muted hover:border-brand-navy'}`}
                     >
                       <Truck className="w-4 h-4 mb-1" />
@@ -1741,7 +1855,7 @@ export function CheckoutPage() {
                     </button>
                     <button 
                       type="button" 
-                      onClick={() => setDeliveryMethod('pickup')} 
+                      onClick={() => handleDeliveryMethodChange('pickup')} 
                       className={`flex flex-col items-center justify-center py-2 px-3 rounded-xl border text-center transition-all ${deliveryMethod === 'pickup' ? 'border-[#fb7a90] bg-[#fb7a90]/5 text-[#fb7a90] font-semibold shadow-sm' : 'border-surface-light text-typography-muted hover:border-brand-navy'}`}
                     >
                       <Store className="w-4 h-4 mb-1" />

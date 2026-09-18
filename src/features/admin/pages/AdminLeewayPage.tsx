@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useAdminUser } from '../hooks/useAdminUser';
 import { usePermissions } from '../hooks/usePermissions';
 import { supabase, TENANT_ID } from '../../../lib/supabase/supabaseClient';
 import { DataTable } from '../components/DataTable';
 import type { Column } from '../components/DataTable';
-import { Coins, Eye, CheckCircle, XCircle, Calendar } from 'lucide-react';
+import { DateRangeFilter, DEFAULT_DATE_RANGE, isDateInRange } from '../components/DateRangeFilter';
+import type { DateRangeValue } from '../components/DateRangeFilter';
+import { Coins, Eye, CheckCircle, XCircle, Calendar, Trash2 } from 'lucide-react';
 import { useNotification } from '../../../core/context/NotificationContext';
 
 interface LeewayAccount {
@@ -15,6 +17,7 @@ interface LeewayAccount {
   total_amount: number;
   down_payment_amount: number;
   remaining_balance: number;
+  monthly_payment_amount: number;
   payment_schedule: 'weekly' | 'monthly' | 'flexible';
   status: 'active' | 'completed' | 'defaulted';
   created_at: string;
@@ -37,6 +40,7 @@ interface LeewayPayment {
   payment_type: 'down_payment' | 'installment';
   admin_notes: string | null;
   created_at: string;
+  updated_at?: string;
   leeway_account?: {
     total_amount: number;
     remaining_balance: number;
@@ -56,6 +60,7 @@ interface LeewayRequest {
   customer_id: string;
   status: 'pending' | 'approved' | 'rejected';
   admin_notes: string | null;
+  monthly_payment_amount?: number | null;
   created_at: string;
   updated_at: string;
   customer_name?: string;
@@ -65,8 +70,8 @@ interface LeewayRequest {
 
 export function AdminLeewayPage() {
   const { adminUser, tenant } = useAdminUser();
-  const { canEdit } = usePermissions('leeway');
-  const { showSuccess, showError } = useNotification();
+  const { canEdit, canDelete } = usePermissions('leeway');
+  const { showSuccess, showError, showConfirm } = useNotification();
 
   const [accounts, setAccounts] = useState<LeewayAccount[]>([]);
   const [pendingPayments, setPendingPayments] = useState<LeewayPayment[]>([]);
@@ -80,8 +85,21 @@ export function AdminLeewayPage() {
   const [adminNotes, setAdminNotes] = useState('');
   const [isVerifying, setIsVerifying] = useState(false);
 
+  // Multiple Delete State
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
   // Notes state for request processing
   const [requestNotesMap, setRequestNotesMap] = useState<Record<string, string>>({});
+  const [requestMonthlyMap, setRequestMonthlyMap] = useState<Record<string, number>>({});
+
+  // Account Monthly Payment Editing state
+  const [editingAccount, setEditingAccount] = useState<LeewayAccount | null>(null);
+  const [editMonthlyAmount, setEditMonthlyAmount] = useState<number>(0);
+  const [isSavingAccount, setIsSavingAccount] = useState(false);
+
+  // Date Range filter state
+  const [dateRange, setDateRange] = useState<DateRangeValue>(DEFAULT_DATE_RANGE);
 
   const tenantId = adminUser?.tenant_id ?? TENANT_ID;
   const currency = tenant?.currency_symbol ?? '₱';
@@ -291,12 +309,17 @@ export function AdminLeewayPage() {
 
         setLeewayRequests(updatedRequests);
         
-        // Initialize request notes
+        // Initialize request notes & monthly amounts
         const initialNotesMap: Record<string, string> = {};
+        const initialMonthlyMap: Record<string, number> = {};
         updatedRequests.forEach(r => {
           initialNotesMap[r.id] = r.admin_notes || '';
+          if (r.monthly_payment_amount) {
+            initialMonthlyMap[r.id] = r.monthly_payment_amount;
+          }
         });
         setRequestNotesMap(initialNotesMap);
+        setRequestMonthlyMap(initialMonthlyMap);
       }
     } catch (err) {
       console.error('Error fetching leeway data:', err);
@@ -384,13 +407,16 @@ export function AdminLeewayPage() {
     }));
 
     const notes = requestNotesMap[requestId] || '';
+    const monthlyAmt = requestMonthlyMap[requestId] !== undefined ? requestMonthlyMap[requestId] : (request.monthly_payment_amount || null);
+
     try {
       const { error } = await supabase
         .from('leeway_requests')
         .update({
           status: action,
           requested_items: updatedItems,
-          admin_notes: notes.trim() || null
+          admin_notes: notes.trim() || null,
+          monthly_payment_amount: action === 'approved' ? (monthlyAmt || null) : null
         })
         .eq('id', requestId);
 
@@ -401,6 +427,111 @@ export function AdminLeewayPage() {
     } catch (err: any) {
       console.error(err);
       showError('Failed to update installment request: ' + (err.message || err));
+    }
+  }
+
+  async function handleSaveMonthlyPayment(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingAccount || !canEdit) return;
+    setIsSavingAccount(true);
+    try {
+      const { error } = await supabase
+        .from('leeway_accounts')
+        .update({ monthly_payment_amount: Number(editMonthlyAmount) })
+        .eq('id', editingAccount.id);
+
+      if (error) throw error;
+      showSuccess('Monthly payment amount updated successfully!');
+      setEditingAccount(null);
+      loadData();
+    } catch (err: any) {
+      console.error(err);
+      showError('Failed to update monthly payment amount: ' + (err.message || err));
+    } finally {
+      setIsSavingAccount(false);
+    }
+  }
+
+  async function handleDeleteSingle(id: string, type: 'accounts' | 'requests' | 'payments') {
+    if (!canDelete) return;
+
+    let targetName = 'record';
+    let table = '';
+    if (type === 'accounts') {
+      targetName = 'installment account';
+      table = 'leeway_accounts';
+    } else if (type === 'requests') {
+      targetName = 'approval request';
+      table = 'leeway_requests';
+    } else {
+      targetName = 'payment record';
+      table = 'leeway_payments';
+    }
+
+    const confirmed = await showConfirm(
+      `Are you sure you want to delete this ${targetName}? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .eq('id', id);
+
+      if (error) throw error;
+
+      showSuccess(`Successfully deleted ${targetName}.`);
+      setSelectedIds(prev => prev.filter(item => item !== id));
+      await loadData();
+    } catch (err: any) {
+      console.error(err);
+      showError(`Failed to delete ${targetName}: ` + (err.message || err));
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handleBulkDelete() {
+    if (!canDelete || selectedIds.length === 0) return;
+
+    let targetName = 'records';
+    let table = '';
+    if (activeTab === 'accounts') {
+      targetName = 'installment account(s)';
+      table = 'leeway_accounts';
+    } else if (activeTab === 'requests') {
+      targetName = 'approval request(s)';
+      table = 'leeway_requests';
+    } else if (activeTab === 'queue' || activeTab === 'logs') {
+      targetName = 'payment record(s)';
+      table = 'leeway_payments';
+    }
+
+    const confirmed = await showConfirm(
+      `Are you sure you want to delete the ${selectedIds.length} selected ${targetName}? This action cannot be undone.`
+    );
+    if (!confirmed) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from(table)
+        .delete()
+        .in('id', selectedIds);
+
+      if (error) throw error;
+
+      showSuccess(`Successfully deleted ${selectedIds.length} ${targetName}.`);
+      setSelectedIds([]);
+      setIsBulkMode(false);
+      await loadData();
+    } catch (err: any) {
+      console.error(err);
+      showError(`Failed to delete selected ${targetName}: ` + (err.message || err));
+    } finally {
+      setLoading(false);
     }
   }
 
@@ -445,6 +576,29 @@ export function AdminLeewayPage() {
       )
     },
     {
+      key: 'monthly_payment_amount',
+      label: 'Monthly Due',
+      render: (row) => (
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-white">
+            {row.monthly_payment_amount > 0 ? `${currency}${Number(row.monthly_payment_amount).toLocaleString()}` : <span className="text-white/40 italic">Not set</span>}
+          </span>
+          {canEdit && (
+            <button
+              onClick={() => {
+                setEditingAccount(row);
+                setEditMonthlyAmount(row.monthly_payment_amount || 0);
+              }}
+              className="px-2 py-0.5 text-[9px] uppercase tracking-wider font-bold rounded bg-[#fb7a90]/10 text-[#fb7a90] hover:bg-[#fb7a90] hover:text-white transition-all"
+              title="Set or update monthly installment amount"
+            >
+              Set Monthly
+            </button>
+          )}
+        </div>
+      )
+    },
+    {
       key: 'payment_schedule',
       label: 'Schedule',
       render: (row) => <span className="capitalize text-white/70">{row.payment_schedule}</span>
@@ -463,6 +617,22 @@ export function AdminLeewayPage() {
           </span>
         );
       }
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (row) => (
+        canDelete ? (
+          <button
+            onClick={() => handleDeleteSingle(row.id, 'accounts')}
+            className="p-1.5 text-white/30 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-all"
+            title="Delete Installment Account"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        ) : null
+      ),
+      width: '80px'
     }
   ];
 
@@ -514,14 +684,25 @@ export function AdminLeewayPage() {
       key: 'actions',
       label: 'Actions',
       render: (row) => (
-        <button
-          onClick={() => { setSelectedPayment(row); setAdminNotes(row.admin_notes || ''); }}
-          className="p-1.5 text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all flex items-center gap-1 text-xs"
-        >
-          <Eye className="w-4 h-4" /> Review
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => { setSelectedPayment(row); setAdminNotes(row.admin_notes || ''); }}
+            className="p-1.5 text-white/60 hover:text-white bg-white/5 hover:bg-white/10 rounded-lg transition-all flex items-center gap-1 text-xs"
+          >
+            <Eye className="w-4 h-4" /> Review
+          </button>
+          {canDelete && (
+            <button
+              onClick={() => handleDeleteSingle(row.id, 'payments')}
+              className="p-1.5 text-white/30 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-all"
+              title="Delete Payment"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
       ),
-      width: '100px'
+      width: '130px'
     }
   ];
 
@@ -572,6 +753,22 @@ export function AdminLeewayPage() {
       key: 'notes',
       label: 'Verification Notes',
       render: (row) => <span className="text-white/40 text-xs truncate max-w-xs block">{row.admin_notes || '—'}</span>
+    },
+    {
+      key: 'actions',
+      label: 'Actions',
+      render: (row) => (
+        canDelete ? (
+          <button
+            onClick={() => handleDeleteSingle(row.id, 'payments')}
+            className="p-1.5 text-white/30 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-all"
+            title="Delete Log Record"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        ) : null
+      ),
+      width: '80px'
     }
   ];
 
@@ -662,6 +859,25 @@ export function AdminLeewayPage() {
       }
     },
     {
+      key: 'monthly_payment_amount',
+      label: 'Approved Monthly Due',
+      render: (row) => (
+        <div className="flex items-center gap-1.5">
+          <span className="text-white/40 text-xs">{currency}</span>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={requestMonthlyMap[row.id] ?? (row.monthly_payment_amount || '')}
+            onChange={e => setRequestMonthlyMap(prev => ({ ...prev, [row.id]: Number(e.target.value) }))}
+            placeholder="e.g. 5000"
+            disabled={!canEdit}
+            className="bg-[#0f1117] border border-white/5 rounded-lg px-2.5 py-1.5 text-xs text-white outline-none w-28 focus:border-[#fb7a90]/40"
+          />
+        </div>
+      )
+    },
+    {
       key: 'admin_notes',
       label: 'Admin Notes',
       render: (row) => (
@@ -679,35 +895,107 @@ export function AdminLeewayPage() {
       key: 'actions',
       label: 'Actions',
       render: (row) => {
-        if (!canEdit) return <span className="text-white/30 text-xs">—</span>;
         return (
-          <div className="flex gap-2">
-            <button
-              onClick={() => handleProcessRequest(row.id, 'rejected')}
-              className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg transition-all"
-              title="Reject Request"
-            >
-              <XCircle className="w-4 h-4" />
-            </button>
-            <button
-              onClick={() => handleProcessRequest(row.id, 'approved')}
-              className="p-1.5 text-emerald-400 hover:text-white hover:bg-emerald-500/20 rounded-lg transition-all"
-              title="Approve Request"
-            >
-              <CheckCircle className="w-4 h-4" />
-            </button>
+          <div className="flex gap-2 items-center">
+            {canEdit && (
+              <>
+                <button
+                  onClick={() => handleProcessRequest(row.id, 'rejected')}
+                  className="p-1.5 text-red-400 hover:text-white hover:bg-red-500/20 rounded-lg transition-all"
+                  title="Reject Request"
+                >
+                  <XCircle className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={() => handleProcessRequest(row.id, 'approved')}
+                  className="p-1.5 text-emerald-400 hover:text-white hover:bg-emerald-500/20 rounded-lg transition-all"
+                  title="Approve Request"
+                >
+                  <CheckCircle className="w-4 h-4" />
+                </button>
+              </>
+            )}
+            {canDelete && (
+              <button
+                onClick={() => handleDeleteSingle(row.id, 'requests')}
+                className="p-1.5 text-white/30 hover:text-red-400 bg-white/5 hover:bg-red-500/10 rounded-lg transition-all"
+                title="Delete Request"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
           </div>
         );
       },
-      width: '100px'
+      width: '130px'
     }
   ];
+
+  const filteredAccounts = useMemo(() => {
+    return accounts.filter(a => isDateInRange(a.created_at, dateRange));
+  }, [accounts, dateRange]);
+
+  const filteredQueue = useMemo(() => {
+    return pendingPayments.filter(p => isDateInRange(p.created_at, dateRange));
+  }, [pendingPayments, dateRange]);
+
+  const filteredLogs = useMemo(() => {
+    return paymentLogs.filter(p => isDateInRange(p.updated_at || p.created_at, dateRange));
+  }, [paymentLogs, dateRange]);
+
+  const filteredRequests = useMemo(() => {
+    return leewayRequests.filter(r => isDateInRange(r.created_at, dateRange));
+  }, [leewayRequests, dateRange]);
+
+  const currentVisibleData = useMemo(() => {
+    if (activeTab === 'accounts') return filteredAccounts;
+    if (activeTab === 'requests') return filteredRequests;
+    if (activeTab === 'queue') return filteredQueue;
+    return filteredLogs;
+  }, [activeTab, filteredAccounts, filteredRequests, filteredQueue, filteredLogs]);
+
+  const selectionColumn = {
+    key: 'selection',
+    label: (
+      <div className="flex items-center justify-center">
+        <input
+          type="checkbox"
+          checked={currentVisibleData.length > 0 && selectedIds.length === currentVisibleData.length}
+          onChange={(e) => {
+            if (e.target.checked) {
+              setSelectedIds(currentVisibleData.map(item => item.id));
+            } else {
+              setSelectedIds([]);
+            }
+          }}
+          className="w-4 h-4 rounded border-white/10 text-[#fb7a90] bg-[#0f1117] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+        />
+      </div>
+    ),
+    render: (row: any) => (
+      <div className="flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+        <input
+          type="checkbox"
+          checked={selectedIds.includes(row.id)}
+          onChange={(e) => {
+            if (e.target.checked) {
+              setSelectedIds(prev => [...prev, row.id]);
+            } else {
+              setSelectedIds(prev => prev.filter(id => id !== row.id));
+            }
+          }}
+          className="w-4 h-4 rounded border-white/10 text-[#fb7a90] bg-[#0f1117] focus:ring-0 focus:ring-offset-0 cursor-pointer"
+        />
+      </div>
+    ),
+    width: '50px'
+  };
 
   return (
     <div className="space-y-6">
       
       {/* Header section */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-bold text-white flex items-center gap-2">
             <Coins className="w-5 h-5 text-[#fb7a90]" /> Installment Management
@@ -715,46 +1003,104 @@ export function AdminLeewayPage() {
           <p className="text-white/40 text-xs mt-0.5">Manage customer installment accounts, verify digital payments, and log outstanding balances.</p>
         </div>
 
-        {/* Tab Selectors */}
-        <div className="flex bg-[#0f1117] border border-white/5 p-1 rounded-xl">
-          <button
-            onClick={() => setActiveTab('accounts')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-              activeTab === 'accounts' ? 'bg-[#fb7a90] text-white' : 'text-white/50 hover:text-white'
-            }`}
-          >
-            Installment Accounts
-          </button>
-          <button
-            onClick={() => setActiveTab('requests')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all relative ${
-              activeTab === 'requests' ? 'bg-[#fb7a90] text-white' : 'text-white/50 hover:text-white'
-            }`}
-          >
-            Approval Requests
-            {leewayRequests.some(r => r.status === 'pending') && activeTab !== 'requests' && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#fb7a90] rounded-full animate-ping" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('queue')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all relative ${
-              activeTab === 'queue' ? 'bg-[#fb7a90] text-white' : 'text-white/50 hover:text-white'
-            }`}
-          >
-            Verification Queue
-            {pendingPayments.length > 0 && activeTab !== 'queue' && (
-              <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#fb7a90] rounded-full animate-ping" />
-            )}
-          </button>
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
-              activeTab === 'logs' ? 'bg-[#fb7a90] text-white' : 'text-white/50 hover:text-white'
-            }`}
-          >
-            Payment Logs
-          </button>
+        <div className="flex flex-wrap items-center gap-2.5 self-start lg:self-auto">
+          {/* Multiple Delete Buttons */}
+          {canDelete && (
+            <>
+              {!isBulkMode ? (
+                <button
+                  onClick={() => setIsBulkMode(true)}
+                  className="flex items-center justify-center gap-2 bg-[#1f2937] hover:bg-[#374151] border border-white/10 text-white rounded-xl px-4 py-2.5 font-semibold text-xs hover:opacity-90 active:scale-[0.98] transition-all"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-white/70" /> Multiple Delete
+                </button>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={handleBulkDelete}
+                    disabled={selectedIds.length === 0}
+                    className="flex items-center justify-center gap-2 bg-red-600 hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-xl px-4 py-2.5 font-semibold text-xs active:scale-[0.98] transition-all"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" /> Delete Selected ({selectedIds.length})
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsBulkMode(false);
+                      setSelectedIds([]);
+                    }}
+                    className="flex items-center justify-center gap-2 bg-[#1f2937] hover:bg-[#374151] border border-white/10 text-white rounded-xl px-4 py-2.5 font-semibold text-xs active:scale-[0.98] transition-all"
+                  >
+                    Cancel Selection
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+
+          {/* Date Range Filter */}
+          <DateRangeFilter
+            value={dateRange}
+            onChange={setDateRange}
+            align="right"
+          />
+
+          {/* Tab Selectors */}
+          <div className="flex bg-[#0f1117] border border-white/5 p-1 rounded-xl">
+            <button
+              onClick={() => {
+                setActiveTab('accounts');
+                setSelectedIds([]);
+                setIsBulkMode(false);
+              }}
+              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all ${
+                activeTab === 'accounts' ? 'bg-[#fb7a90] text-white' : 'text-white/50 hover:text-white'
+              }`}
+            >
+              Accounts
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('requests');
+                setSelectedIds([]);
+                setIsBulkMode(false);
+              }}
+              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all relative ${
+                activeTab === 'requests' ? 'bg-[#fb7a90] text-white' : 'text-white/50 hover:text-white'
+              }`}
+            >
+              Requests
+              {leewayRequests.some(r => r.status === 'pending') && activeTab !== 'requests' && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#fb7a90] rounded-full animate-ping" />
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('queue');
+                setSelectedIds([]);
+                setIsBulkMode(false);
+              }}
+              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all relative ${
+                activeTab === 'queue' ? 'bg-[#fb7a90] text-white' : 'text-white/50 hover:text-white'
+              }`}
+            >
+              Verification
+              {pendingPayments.length > 0 && activeTab !== 'queue' && (
+                <span className="absolute -top-1 -right-1 w-2 h-2 bg-[#fb7a90] rounded-full animate-ping" />
+              )}
+            </button>
+            <button
+              onClick={() => {
+                setActiveTab('logs');
+                setSelectedIds([]);
+                setIsBulkMode(false);
+              }}
+              className={`px-3.5 py-2 text-xs font-bold rounded-lg transition-all ${
+                activeTab === 'logs' ? 'bg-[#fb7a90] text-white' : 'text-white/50 hover:text-white'
+              }`}
+            >
+              Logs
+            </button>
+          </div>
         </div>
       </div>
 
@@ -762,8 +1108,8 @@ export function AdminLeewayPage() {
       <div className="bg-[#111827] border border-white/5 rounded-2xl p-4">
         {activeTab === 'accounts' && (
           <DataTable
-            columns={accountColumns}
-            data={accounts}
+            columns={isBulkMode ? [selectionColumn, ...accountColumns] : accountColumns}
+            data={filteredAccounts}
             isLoading={loading}
             searchPlaceholder="Search customer, email, or order..."
             emptyMessage="No active installment accounts found."
@@ -772,8 +1118,8 @@ export function AdminLeewayPage() {
 
         {activeTab === 'queue' && (
           <DataTable
-            columns={queueColumns}
-            data={pendingPayments}
+            columns={isBulkMode ? [selectionColumn, ...queueColumns] : queueColumns}
+            data={filteredQueue}
             isLoading={loading}
             searchPlaceholder="Search customer, tracking code..."
             emptyMessage="Verification queue is currently empty."
@@ -782,8 +1128,8 @@ export function AdminLeewayPage() {
 
         {activeTab === 'logs' && (
           <DataTable
-            columns={logsColumns}
-            data={paymentLogs}
+            columns={isBulkMode ? [selectionColumn, ...logsColumns] : logsColumns}
+            data={filteredLogs}
             isLoading={loading}
             searchPlaceholder="Search logs..."
             emptyMessage="No logged payment history found."
@@ -792,8 +1138,8 @@ export function AdminLeewayPage() {
 
         {activeTab === 'requests' && (
           <DataTable
-            columns={requestColumns}
-            data={leewayRequests}
+            columns={isBulkMode ? [selectionColumn, ...requestColumns] : requestColumns}
+            data={filteredRequests}
             isLoading={loading}
             searchPlaceholder="Search request customer..."
             emptyMessage="No installment access requests submitted."
@@ -913,6 +1259,75 @@ export function AdminLeewayPage() {
               </div>
 
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Monthly Payment Modal */}
+      {editingAccount && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-[#111827] border border-white/10 rounded-2xl w-full max-w-md overflow-hidden shadow-2xl p-6 space-y-5 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-white/5 pb-3">
+              <h3 className="text-white font-semibold text-base flex items-center gap-2">
+                <Coins className="w-4 h-4 text-[#fb7a90]" /> Set Monthly Payment Amount
+              </h3>
+              <button onClick={() => setEditingAccount(null)} className="text-white/40 hover:text-white transition-colors">
+                <XCircle className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs text-white/70 bg-[#0f1117] p-3.5 rounded-xl border border-white/5">
+              <div className="flex justify-between">
+                <span className="text-white/40">Tracking Order:</span>
+                <span className="font-mono text-white font-bold">{editingAccount.order?.tracking_number || 'N/A'}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/40">Customer:</span>
+                <span className="text-white font-semibold">{editingAccount.customer?.full_name || editingAccount.customer?.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-white/40">Total Order Cost:</span>
+                <span className="text-white font-bold">{currency}{Number(editingAccount.total_amount).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between border-t border-white/5 pt-2">
+                <span className="text-white/40">Remaining Balance:</span>
+                <span className="text-[#fb7a90] font-bold">{currency}{Number(editingAccount.remaining_balance).toLocaleString()}</span>
+              </div>
+            </div>
+
+            <form onSubmit={handleSaveMonthlyPayment} className="space-y-4 pt-1">
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-bold uppercase text-white/60">Required Monthly Payment ({currency}) *</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  required
+                  value={editMonthlyAmount || ''}
+                  onChange={e => setEditMonthlyAmount(Number(e.target.value))}
+                  placeholder="e.g. 5000"
+                  className="bg-[#0f1117] border border-white/10 rounded-xl px-4 py-3 text-sm text-white font-bold outline-none focus:border-[#fb7a90]"
+                />
+                <p className="text-[10px] text-white/40 italic leading-relaxed">Customers will be required to pay this exact amount each installment payment until their balance is cleared.</p>
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-white/5">
+                <button
+                  type="button"
+                  onClick={() => setEditingAccount(null)}
+                  className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-xl text-xs font-semibold transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingAccount}
+                  className="px-5 py-2.5 bg-[#fb7a90] hover:bg-[#fb7a90]/90 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-50"
+                >
+                  {isSavingAccount ? 'Saving...' : 'Save Monthly Amount'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
