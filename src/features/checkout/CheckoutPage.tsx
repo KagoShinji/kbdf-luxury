@@ -7,7 +7,7 @@ import type { PSGCLocation } from '../cart/locationData';
 import { ImageUploadInput } from '../admin/components/ImageUploadInput';
 import { useUserAuth } from '../../core/context/UserAuthContext';
 import { useNotification } from '../../core/context/NotificationContext';
-import { Check, Clipboard, CreditCard, ShoppingBag, MapPin, Truck, ChevronRight, Download, Loader2, User, LogIn, Clock, AlertTriangle, Store, ChevronDown } from 'lucide-react';
+import { Check, Clipboard, CreditCard, ShoppingBag, MapPin, Truck, ChevronRight, Download, Loader2, User, LogIn, Clock, AlertTriangle, Store, ChevronDown, Calendar, Lock } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Turnstile } from '../../ui/Turnstile';
 import { sanitizePhPhone, isValidPhPhone, handlePhoneKeyDown } from '../../lib/utils/phone';
@@ -431,8 +431,7 @@ export function CheckoutPage() {
     return `${m}:${s}`;
   };
 
-  // Leeway states
-  const [leewaySchedule, setLeewaySchedule] = useState<'weekly' | 'monthly' | 'flexible'>('weekly');
+  // Leeway states (Locked to admin-approved monthly schedule)
   const [leewayDownPayment, setLeewayDownPayment] = useState<number>(0);
   const [leewayPaymentMethodId, setLeewayPaymentMethodId] = useState<string>('');
   const [leewayRequestedItems, setLeewayRequestedItems] = useState<any[]>([]);
@@ -887,7 +886,7 @@ export function CheckoutPage() {
           down_payment_amount: leewayDownPayment,
           remaining_balance: orderData.total,
           monthly_payment_amount: approvedMonthlyAmount || 0,
-          payment_schedule: leewaySchedule,
+          payment_schedule: 'monthly',
           status: 'active'
         };
 
@@ -1414,18 +1413,34 @@ export function CheckoutPage() {
                                 </p>
                               )}
                             </div>
-                            {/* 1. Installment schedule */}
+                            {/* 1. Installment schedule (Locked to Store Approved Monthly Plan) */}
                             <div className="flex flex-col gap-1.5 animate-fadeIn">
-                              <label className="text-[10px] font-bold uppercase text-typography-primary">Select Installment Schedule *</label>
-                              <select
-                                value={leewaySchedule}
-                                onChange={e => setLeewaySchedule(e.target.value as any)}
-                                className="bg-white border border-surface-light rounded-xl px-4 py-2.5 text-sm text-typography-primary outline-none focus:border-brand-pink"
-                              >
-                                <option value="weekly">Pay Weekly</option>
-                                <option value="monthly">Pay Monthly</option>
-                                <option value="flexible">Flexible (Depends on Customer)</option>
-                              </select>
+                              <label className="text-[10px] font-bold uppercase text-typography-primary flex items-center justify-between">
+                                <span>Installment Payment Schedule</span>
+                                <span className="inline-flex items-center gap-1 text-[9px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full font-semibold">
+                                  <Lock className="w-2.5 h-2.5" /> Approved Option
+                                </span>
+                              </label>
+                              <div className="bg-white border border-surface-light rounded-2xl p-4 flex items-center justify-between shadow-xs">
+                                <div className="flex items-center gap-3">
+                                  <div className="w-10 h-10 rounded-xl bg-brand-pink/10 text-brand-pink flex items-center justify-center shrink-0">
+                                    <Calendar className="w-5 h-5" />
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm font-bold text-typography-primary">Pay Monthly</p>
+                                      <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded bg-brand-navy/5 text-brand-navy">Fixed</span>
+                                    </div>
+                                    <p className="text-[11px] text-typography-muted">Set and approved by store administrator</p>
+                                  </div>
+                                </div>
+                                {approvedMonthlyAmount && approvedMonthlyAmount > 0 && (
+                                  <div className="text-right">
+                                    <span className="text-[9px] uppercase font-bold text-typography-muted block">Required Due</span>
+                                    <span className="text-sm font-bold text-brand-pink">{currencySymbol}{approvedMonthlyAmount.toLocaleString()} / mo</span>
+                                  </div>
+                                )}
+                              </div>
                             </div>
 
                             {/* 2. Downpayment amount */}
