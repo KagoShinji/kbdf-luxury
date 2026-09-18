@@ -1,13 +1,15 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAdminUser } from '../hooks/useAdminUser';
 import { usePermissions } from '../hooks/usePermissions';
 import { supabase } from '../../../lib/supabase/supabaseClient';
-import { Save, AlertCircle, Layout, PhoneCall, Image as ImageIcon, Settings, Truck, FileText } from 'lucide-react';
+import { Save, AlertCircle, Layout, PhoneCall, Image as ImageIcon, Settings, Truck, FileText, KeyRound } from 'lucide-react';
 import { ImageUploadInput } from '../components/ImageUploadInput';
 import { fetchProvinces } from '../../cart/locationData';
 import type { PSGCLocation } from '../../cart/locationData';
 
 export function SettingsPage() {
+  const navigate = useNavigate();
   const { tenant } = useAdminUser();
   const { canEdit } = usePermissions('settings');
 
@@ -405,16 +407,25 @@ export function SettingsPage() {
           <p className="text-white/40 text-xs mt-0.5">Customize your storefront branding, layout details, operating hours, and banner configurations.</p>
         </div>
 
-        {canEdit && (
+        <div className="flex items-center gap-3">
           <button
             type="button"
-            onClick={handleSave}
-            disabled={isSaving}
-            className="flex items-center justify-center gap-2 bg-gradient-to-r from-[#fb7a90] to-[#f16881] text-white rounded-xl px-5 py-2.5 font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all self-start sm:self-auto disabled:opacity-50"
+            onClick={() => navigate('/admin/change-password')}
+            className="flex items-center justify-center gap-2 bg-white/5 hover:bg-white/10 text-white/80 hover:text-white border border-white/10 rounded-xl px-4 py-2.5 font-medium text-xs transition-all self-start sm:self-auto"
           >
-            <Save className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Settings'}
+            <KeyRound className="w-3.5 h-3.5 text-[#fb7a90]" /> Change Password
           </button>
-        )}
+          {canEdit && (
+            <button
+              type="button"
+              onClick={handleSave}
+              disabled={isSaving}
+              className="flex items-center justify-center gap-2 bg-gradient-to-r from-[#fb7a90] to-[#f16881] text-white rounded-xl px-5 py-2.5 font-semibold text-sm hover:opacity-90 active:scale-[0.98] transition-all self-start sm:self-auto disabled:opacity-50"
+            >
+              <Save className="w-4 h-4" /> {isSaving ? 'Saving...' : 'Save Settings'}
+            </button>
+          )}
+        </div>
       </div>
 
       {successMsg && (

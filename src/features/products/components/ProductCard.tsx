@@ -64,31 +64,35 @@ export function ProductCard({ product, index }: ProductCardProps) {
 
 
           {/* Title and Price */}
-          <div className="flex justify-between items-start gap-2 mb-1">
-            <h3 className="text-xs font-semibold text-typography-primary line-clamp-1 flex-1 text-left">
+          <div className="flex justify-between items-start gap-2 mb-1 min-h-[34px]">
+            <h3 className="text-xs font-semibold text-typography-primary line-clamp-1 flex-1 text-left leading-tight">
               {product.title}
             </h3>
-            <div className="flex flex-col items-end gap-0.5">
-              <div className="text-xs font-medium text-typography-primary whitespace-nowrap">
+            <div className="flex flex-col items-end shrink-0">
+              <div className="text-xs font-medium text-typography-primary whitespace-nowrap leading-tight">
                 ₱{product.price.toLocaleString()}
               </div>
-              {product.original_price && product.original_price > product.price && (
-                <div className="text-[10px] text-typography-muted line-through font-medium whitespace-nowrap">
+              {product.original_price && product.original_price > product.price ? (
+                <div className="text-[10px] text-typography-muted line-through font-medium whitespace-nowrap leading-tight">
                   ₱{product.original_price.toLocaleString()}
+                </div>
+              ) : (
+                <div className="text-[10px] leading-tight invisible select-none" aria-hidden="true">
+                  &nbsp;
                 </div>
               )}
             </div>
           </div>
 
           {/* Subtitle / Brand */}
-          <div className="flex justify-between items-center mb-1">
-            <p className="text-[10px] text-typography-muted uppercase tracking-[0.2em]">
-              {product.brand}
+          <div className="flex justify-between items-center mb-1 min-h-[16px]">
+            <p className="text-[10px] text-typography-muted uppercase tracking-[0.2em] truncate">
+              {product.brand || '\u00A0'}
             </p>
           </div>
 
           {/* Rating */}
-          <div className="flex items-center gap-1 text-[11px] font-medium text-typography-primary mt-1">
+          <div className="flex items-center gap-1 text-[11px] font-medium text-typography-primary mt-1 min-h-[16px]">
             <span>★</span>
             <span className="underline decoration-1 underline-offset-2">5.0 (35)</span>
           </div>

@@ -17,6 +17,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/admin/leads': 'Lead Management',
   '/admin/expenses': 'Expense Tracker',
   '/admin/payment-methods': 'Payment Methods & QR',
+  '/admin/change-password': 'Change Password',
   '/admin/settings': 'Settings',
 };
 

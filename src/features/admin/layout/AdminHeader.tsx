@@ -1,5 +1,6 @@
-import { LogOut, Bell, ChevronDown, Sun, Moon, Menu } from 'lucide-react';
+import { LogOut, Bell, ChevronDown, Sun, Moon, Menu, KeyRound } from 'lucide-react';
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAdminAuth } from '../context/AdminAuthContext';
 import { AnimatePresence, motion } from 'framer-motion';
 import { supabase } from '../../../lib/supabase/supabaseClient';
@@ -19,6 +20,7 @@ interface NotificationItem {
 
 export function AdminHeader({ title, onMenuClick }: AdminHeaderProps) {
   const { adminUser, tenant, isSuperadmin, signOut } = useAdminAuth();
+  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
@@ -288,8 +290,20 @@ export function AdminHeader({ title, onMenuClick }: AdminHeaderProps) {
                   )}
                 </div>
                 <button
+                  type="button"
+                  onClick={() => {
+                    setMenuOpen(false);
+                    navigate('/admin/change-password');
+                  }}
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-white/70 hover:text-white hover:bg-white/5 transition-colors text-xs border-b border-white/5"
+                >
+                  <KeyRound className="w-4 h-4 text-[#fb7a90]" strokeWidth={1.5} />
+                  Change Password
+                </button>
+                <button
+                  type="button"
                   onClick={() => { setMenuOpen(false); signOut(); }}
-                  className="flex items-center gap-2.5 w-full px-4 py-3 text-white/60 hover:text-white hover:bg-white/5 transition-colors text-sm"
+                  className="flex items-center gap-2.5 w-full px-4 py-2.5 text-white/60 hover:text-white hover:bg-white/5 transition-colors text-xs"
                 >
                   <LogOut className="w-4 h-4" strokeWidth={1.5} />
                   Sign Out
