@@ -639,7 +639,16 @@ export function CustomerOrdersPage() {
       showError("Please select a leeway plan.");
       return;
     }
-    if (paymentAmount <= 0) {
+    const acc = leewayAccounts.find(a => a.id === selectedAccountId);
+    const amountDue = acc
+      ? (acc.monthly_payment_amount > 0
+          ? Math.min(acc.monthly_payment_amount, acc.remaining_balance)
+          : acc.remaining_balance)
+      : paymentAmount;
+
+    const finalAmount = paymentAmount > 0 ? paymentAmount : amountDue;
+
+    if (finalAmount <= 0) {
       showError("Amount must be greater than 0.");
       return;
     }
@@ -653,7 +662,7 @@ export function CustomerOrdersPage() {
       const payload = {
         tenant_id: tenant!.id,
         leeway_account_id: selectedAccountId,
-        amount: Number(paymentAmount),
+        amount: Number(finalAmount),
         proof_of_payment_url: submitReceiptUrl,
         status: 'pending_verification',
         payment_type: 'installment',
@@ -1075,11 +1084,10 @@ export function CustomerOrdersPage() {
                 {leewayAccounts.some(a => a.status === 'active') && (
                   <button
                     onClick={() => {
-                      const activeAccs = leewayAccounts.filter(a => a.status === 'active');
-                      if (activeAccs.length > 0) {
-                        setSelectedAccountId(activeAccs[0].id);
+                      const activeAcc = leewayAccounts.find(a => a.status === 'active');
+                      if (activeAcc) {
+                        handleOpenSubmitModal(activeAcc);
                       }
-                      setIsSubmitModalOpen(true);
                     }}
                     className="bg-brand-pink hover:bg-white hover:text-brand-navy text-white rounded-2xl px-6 py-3.5 text-xs font-bold uppercase tracking-widest transition-all self-start sm:self-auto relative z-10 flex items-center gap-2 shadow-lg"
                   >
@@ -1709,24 +1717,24 @@ export function CustomerOrdersPage() {
 
       {/* Submit Payment Receipt Modal */}
       {isSubmitModalOpen && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white border border-surface-light rounded-3xl w-full max-w-lg overflow-hidden shadow-2xl flex flex-col my-8 animate-scaleUp">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-surface-light rounded-3xl w-full max-w-lg max-h-[90vh] overflow-hidden shadow-2xl flex flex-col my-auto animate-scaleUp">
             
-            {/* Header */}
-            <div className="px-6 py-5 border-b border-surface-light flex items-center justify-between">
-              <h3 className="text-typography-primary font-serif text-lg">
+            {/* Header (Fixed) */}
+            <div className="px-6 py-4 sm:py-5 border-b border-surface-light flex items-center justify-between shrink-0">
+              <h3 className="text-typography-primary font-serif text-base sm:text-lg">
                 Submit Installment Payment
               </h3>
               <button 
                 onClick={() => { setIsSubmitModalOpen(false); setSubmitReceiptUrl(""); setPaymentAmount(0); }} 
-                className="text-typography-muted hover:text-typography-primary transition-colors"
+                className="text-typography-muted hover:text-typography-primary transition-colors p-1"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Form */}
-            <form onSubmit={handleSubmitLeewayPayment} className="p-6 space-y-6 overflow-y-auto">
+            {/* Form Body (Scrollable for mobile & desktop) */}
+            <form onSubmit={handleSubmitLeewayPayment} className="p-5 sm:p-6 space-y-5 overflow-y-auto flex-1 overscroll-contain">
               
               {/* Account Plan Selector */}
               <div className="flex flex-col gap-1.5">
@@ -1761,34 +1769,43 @@ export function CustomerOrdersPage() {
               </div>
 
               {/* Amount display */}
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase text-typography-primary">Required Monthly Installment Amount</label>
-                <div className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 flex items-center justify-between">
-                  <span className="text-base font-bold text-typography-primary font-mono">{currencySymbol}{Number(paymentAmount).toLocaleString()}</span>
-                  {(() => {
-                    const acc = leewayAccounts.find(a => a.id === selectedAccountId);
-                    if (acc && acc.monthly_payment_amount > 0 && acc.remaining_balance <= acc.monthly_payment_amount) {
-                      return <span className="text-[9px] uppercase font-bold text-brand-pink bg-brand-pink/10 px-2 py-0.5 rounded">Final Balance</span>;
-                    }
-                    return <span className="text-[9px] uppercase font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">Monthly Installment</span>;
-                  })()}
-                </div>
-                <p className="text-[10px] text-typography-muted italic">
-                  {(() => {
-                    const acc = leewayAccounts.find(a => a.id === selectedAccountId);
-                    if (acc && acc.monthly_payment_amount > 0) {
-                      return `Fixed monthly payment amount configured by the store administrator (${currencySymbol}${acc.monthly_payment_amount.toLocaleString()} / month).`;
-                    }
-                    return "Total outstanding balance required for this plan.";
-                  })()}
-                </p>
-              </div>
+              {(() => {
+                const acc = leewayAccounts.find(a => a.id === selectedAccountId);
+                const calculatedAmount = acc
+                  ? (acc.monthly_payment_amount > 0
+                      ? Math.min(acc.monthly_payment_amount, acc.remaining_balance)
+                      : acc.remaining_balance)
+                  : paymentAmount;
+                const displayAmount = paymentAmount > 0 ? paymentAmount : calculatedAmount;
+                const isFinalBalance = acc && acc.monthly_payment_amount > 0 && acc.remaining_balance <= acc.monthly_payment_amount;
+
+                return (
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold uppercase text-typography-primary">Required Monthly Installment Amount</label>
+                    <div className="bg-surface-offWhite border border-surface-light rounded-xl px-4 py-3 flex items-center justify-between">
+                      <span className="text-base font-bold text-typography-primary font-mono">
+                        {currencySymbol}{Number(displayAmount).toLocaleString()}
+                      </span>
+                      {isFinalBalance ? (
+                        <span className="text-[9px] uppercase font-bold text-brand-pink bg-brand-pink/10 px-2 py-0.5 rounded">Final Balance</span>
+                      ) : (
+                        <span className="text-[9px] uppercase font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">Monthly Installment</span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-typography-muted italic">
+                      {acc && acc.monthly_payment_amount > 0
+                        ? `Fixed monthly payment amount configured by the store administrator (${currencySymbol}${acc.monthly_payment_amount.toLocaleString()} / month).`
+                        : "Total outstanding balance required for this plan."}
+                    </p>
+                  </div>
+                );
+              })()}
 
               {/* Digital payment instructions */}
               {paymentMethods.length > 0 && (
-                <div className="border border-surface-light bg-surface-offWhite p-4 rounded-2xl space-y-4">
+                <div className="border border-surface-light bg-surface-offWhite p-4 rounded-2xl space-y-3">
                   <span className="text-[10px] uppercase font-bold text-typography-primary tracking-widest block border-b border-surface-light pb-1.5">Transfer instructions</span>
-                  <div className="space-y-3 max-h-40 overflow-y-auto pr-1">
+                  <div className="space-y-3 max-h-36 overflow-y-auto pr-1">
                     {paymentMethods.map(m => (
                       <div key={m.id} className="text-xs text-typography-primary">
                         <p className="font-bold uppercase text-brand-pink">{m.name} ({m.type.replace('_', ' ')})</p>
@@ -1815,8 +1832,8 @@ export function CustomerOrdersPage() {
                 />
               </div>
 
-              {/* Actions */}
-              <div className="pt-4 border-t border-surface-light flex items-center justify-end gap-3">
+              {/* Actions Footer */}
+              <div className="pt-3 border-t border-surface-light flex items-center justify-end gap-3 shrink-0">
                 <button
                   type="button"
                   onClick={() => { setIsSubmitModalOpen(false); setSubmitReceiptUrl(""); setPaymentAmount(0); }}
@@ -1827,7 +1844,7 @@ export function CustomerOrdersPage() {
                 <button
                   type="submit"
                   disabled={isSubmittingPayment}
-                  className="px-6 py-2.5 bg-brand-navy hover:bg-brand-pink text-white rounded-xl text-xs uppercase font-bold tracking-widest transition-all flex items-center gap-2"
+                  className="px-6 py-2.5 bg-brand-navy hover:bg-brand-pink text-white rounded-xl text-xs uppercase font-bold tracking-widest transition-all flex items-center gap-2 shadow-md"
                 >
                   {isSubmittingPayment && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                   {isSubmittingPayment ? 'Submitting...' : 'Submit Payment'}
