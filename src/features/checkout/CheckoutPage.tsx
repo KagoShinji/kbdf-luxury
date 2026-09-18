@@ -7,7 +7,7 @@ import type { PSGCLocation } from '../cart/locationData';
 import { ImageUploadInput } from '../admin/components/ImageUploadInput';
 import { useUserAuth } from '../../core/context/UserAuthContext';
 import { useNotification } from '../../core/context/NotificationContext';
-import { Check, X, Clipboard, CreditCard, ShoppingBag, MapPin, Truck, ChevronRight, Download, Loader2, User, LogIn, Clock, AlertTriangle, Store, ChevronDown } from 'lucide-react';
+import { Check, Clipboard, CreditCard, ShoppingBag, MapPin, Truck, ChevronRight, Download, Loader2, User, LogIn, Clock, AlertTriangle, Store, ChevronDown } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Turnstile } from '../../ui/Turnstile';
 import { sanitizePhPhone, isValidPhPhone, handlePhoneKeyDown } from '../../lib/utils/phone';
@@ -27,32 +27,20 @@ export function CheckoutPage() {
   const navigate = useNavigate();
 
   const { tenant } = useTenant();
-  const { user, signIn, signUp } = useUserAuth();
+  const { user, signInWithGoogle } = useUserAuth();
   const { showSuccess, showError, showInfo } = useNotification();
 
   // Checkout Auth decision: 'guest' | 'auth' | null
   const [checkoutMode, setCheckoutMode] = useState<'guest' | 'auth' | null>(user ? 'auth' : null);
-  
+
   // Login form states inside Checkout
-  const [authTab, setAuthTab] = useState<'login' | 'register'>('login');
-  const [authEmail, setAuthEmail] = useState('');
-  const [authPassword, setAuthPassword] = useState('');
-  const [authConfirmPassword, setAuthConfirmPassword] = useState('');
-  const [authName, setAuthName] = useState('');
   const [authError, setAuthError] = useState('');
   const [authLoading, setAuthLoading] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const [turnstileResetCount, setTurnstileResetCount] = useState(0);
+
   const [orderCaptchaToken, setOrderCaptchaToken] = useState<string | null>(null);
   const [orderTurnstileResetCount, setOrderTurnstileResetCount] = useState(0);
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const siteKey = isLocalhost ? "1x00000000000000000000AA" : (import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
- 
-  // Reset Turnstile when switching auth tabs
-  useEffect(() => {
-    setCaptchaToken(null);
-    setTurnstileResetCount(prev => prev + 1);
-  }, [authTab]);
 
   const [step, setStep] = useState<1 | 2 | 3 | 4 | 5>(1);
   const [isPlacing, setIsPlacing] = useState(false);
@@ -586,7 +574,7 @@ export function CheckoutPage() {
     if (user) {
       setCheckoutMode('auth');
       setEmail(user.email || '');
-      
+
       const fullName = user.user_metadata?.full_name || '';
       if (fullName) {
         const parts = fullName.split(' ');
@@ -643,51 +631,15 @@ export function CheckoutPage() {
     }
   }, [deliveryMethod, paymentMethods, selectedMethodId, leewayPaymentMethodId]);
 
-  const authPasswordCriteria = [
-    { label: "At least 6 characters", met: authPassword.length >= 6 },
-    { label: "At least one uppercase letter", met: /[A-Z]/.test(authPassword) },
-    { label: "At least one number", met: /[0-9]/.test(authPassword) },
-    { label: "At least one special symbol (e.g. @, #, $, !)", met: /[^A-Za-z0-9]/.test(authPassword) }
-  ];
-  const allAuthCriteriaMet = authPasswordCriteria.every(c => c.met);
-
-  // Handle local Auth submit
-  const handleAuthSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!authEmail || !authPassword || (authTab === 'register' && (!authName || !authConfirmPassword))) {
-      setAuthError('Please fill in all inputs.');
-      return;
-    }
-
-    if (authTab === 'register') {
-      if (authPassword !== authConfirmPassword) {
-        setAuthError('Passwords do not match.');
-        return;
-      }
-      if (!allAuthCriteriaMet) {
-        setAuthError('Please satisfy all password complexity requirements.');
-        return;
-      }
-    }
-
+  // Handle Google Auth submit during checkout
+  const handleCheckoutGoogleSignIn = async () => {
     setAuthLoading(true);
     setAuthError('');
     try {
-      if (authTab === 'login') {
-        await signIn(authEmail, authPassword, captchaToken || undefined);
-      } else {
-        await signUp(authEmail, authPassword, authName, captchaToken || undefined);
-        showSuccess('Verification email sent! You can continue checkout.');
-        setAuthTab('login');
-        setAuthName('');
-        setAuthPassword('');
-        setAuthConfirmPassword('');
-      }
+      await signInWithGoogle();
     } catch (err: any) {
-      setAuthError(err.message || 'Authentication failed.');
-      setTurnstileResetCount(prev => prev + 1);
-      setCaptchaToken(null);
-    } finally {
+      console.error('Checkout Google sign-in error:', err);
+      setAuthError(err.message || 'Failed to connect with Google.');
       setAuthLoading(false);
     }
   };
@@ -760,7 +712,7 @@ export function CheckoutPage() {
 
   const calculateShippingFee = () => {
     if (deliveryMethod === 'pickup') return 0;
-    
+
     // Check for free shipping threshold
     if (shippingSettings.free_shipping_enabled && cartTotal >= (shippingSettings.free_shipping_min_amount || 0)) {
       return 0;
@@ -768,7 +720,7 @@ export function CheckoutPage() {
 
     // Sum up the total weight of the items in the cart
     const totalCartWeight = items.reduce((sum, item) => sum + (Number(item.weight) || 0) * item.quantity, 0);
-    
+
     // Find matching custom rate by province or fallback to default rate
     const provName = province === 'Other' ? customProvince : province;
     let baseRate = Number(shippingSettings.default_rate !== undefined ? shippingSettings.default_rate : 150);
@@ -776,7 +728,7 @@ export function CheckoutPage() {
     let extraWeightRate = Number(shippingSettings.default_extra_weight_rate !== undefined ? shippingSettings.default_extra_weight_rate : 50);
 
     if (provName) {
-      const match = (shippingSettings.rates || []).find((r: any) => 
+      const match = (shippingSettings.rates || []).find((r: any) =>
         (r.provinces || []).some((p: string) => p.toLowerCase() === provName.toLowerCase())
       );
       if (match) {
@@ -1036,8 +988,8 @@ export function CheckoutPage() {
                 <h3 className="text-lg font-serif text-typography-primary">Checkout as Guest</h3>
                 <p className="text-xs text-typography-muted">You can place your order instantly. You will receive a tracking number to query status updates later.</p>
               </div>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setCheckoutMode('guest')}
                 className="w-full bg-brand-navy hover:bg-brand-pink text-white rounded-xl py-3.5 text-xs font-bold uppercase tracking-widest transition-all mt-8"
               >
@@ -1054,8 +1006,8 @@ export function CheckoutPage() {
                 <h3 className="text-lg font-serif text-typography-primary">Log In or Register</h3>
                 <p className="text-xs text-typography-muted">Save your orders automatically. You can track your purchase history directly under your profile dashboard.</p>
               </div>
-              <button 
-                type="button" 
+              <button
+                type="button"
                 onClick={() => setCheckoutMode('auth')}
                 className="w-full bg-gradient-to-r from-[#fb7a90] to-[#f16881] hover:opacity-90 text-white rounded-xl py-3.5 text-xs font-bold uppercase tracking-widest transition-all mt-8"
               >
@@ -1068,17 +1020,20 @@ export function CheckoutPage() {
     );
   }
 
-  // Renders the Login Form inside Checkout if selected auth and not yet logged in
+  // Renders Google Sign-In inside Checkout if selected auth and not yet logged in
   if (!user && checkoutMode === 'auth') {
     return (
       <div className="pt-32 pb-24 min-h-screen bg-surface-white">
         <div className="max-w-md mx-auto px-6">
           <div className="text-center mb-8">
+            <span className="text-[10px] uppercase tracking-[0.25em] font-bold text-brand-pink block mb-2">
+              Express Member Checkout
+            </span>
             <h2 className="text-2xl font-serif text-typography-primary mb-2">
-              {authTab === 'login' ? 'Sign In to Checkout' : 'Create Account'}
+              Sign In with Google
             </h2>
-            <p className="text-xs uppercase tracking-widest text-typography-muted font-bold">
-              {authTab === 'login' ? 'Access your prefilled shipping profiles' : 'Register to save order history'}
+            <p className="text-xs text-typography-muted">
+              Access your prefilled shipping address and track orders in one click
             </p>
           </div>
 
@@ -1088,85 +1043,38 @@ export function CheckoutPage() {
             </div>
           )}
 
-          <form onSubmit={handleAuthSubmit} className="space-y-5 bg-surface-offWhite border border-surface-light p-6 rounded-2xl">
-            {authTab === 'register' && (
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase text-typography-primary">Full Name *</label>
-                <input type="text" value={authName} onChange={e => setAuthName(e.target.value)} required placeholder="Jane Doe" className="w-full bg-white border border-surface-light rounded-xl px-4 py-2.5 text-sm text-typography-primary outline-none focus:border-brand-pink" />
-              </div>
-            )}
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold uppercase text-typography-primary">Email Address *</label>
-              <input type="email" value={authEmail} onChange={e => setAuthEmail(e.target.value)} required placeholder="jane.doe@example.com" className="w-full bg-white border border-surface-light rounded-xl px-4 py-2.5 text-sm text-typography-primary outline-none focus:border-brand-pink" />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <label className="text-[10px] font-bold uppercase text-typography-primary">Password *</label>
-              <input type="password" value={authPassword} onChange={e => setAuthPassword(e.target.value)} required placeholder="••••••••" className="w-full bg-white border border-surface-light rounded-xl px-4 py-2.5 text-sm text-typography-primary outline-none focus:border-brand-pink" />
-              {authTab === 'register' && (
-                <div className="mt-2 space-y-1 bg-white border border-surface-light rounded-xl p-3 text-[10px]">
-                  <span className="font-bold text-typography-primary uppercase tracking-wider block mb-1">Password Requirements:</span>
-                  {authPasswordCriteria.map((c, i) => (
-                    <div key={i} className="flex items-center gap-1.5 font-semibold">
-                      {c.met ? (
-                        <Check className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                      ) : (
-                        <X className="w-3.5 h-3.5 text-typography-muted/40 flex-shrink-0" />
-                      )}
-                      <span className={c.met ? "text-emerald-600 line-through opacity-70" : "text-typography-muted"}>
-                        {c.label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+          <div className="bg-surface-offWhite border border-surface-light p-6 md:p-8 rounded-3xl space-y-5 shadow-sm">
+            <button
+              type="button"
+              onClick={handleCheckoutGoogleSignIn}
+              disabled={authLoading}
+              className="w-full flex items-center justify-center gap-3.5 bg-white hover:bg-gray-50 border border-gray-200 text-gray-800 py-4 px-6 text-xs uppercase font-bold tracking-widest rounded-2xl shadow-sm hover:shadow transition-all duration-200 active:scale-[0.99] disabled:opacity-50"
+            >
+              {authLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-brand-navy" />
+                  <span>Connecting to Google...</span>
+                </>
+              ) : (
+                <>
+                  <svg className="w-5 h-5 flex-shrink-0" viewBox="0 0 24 24">
+                    <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.69c-.29 1.5-.1.88-1.5 2.2l3.43 2.66c2-1.84 3.12-4.56 3.12-7.69z" />
+                    <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.43-2.66c-.95.64-2.17 1.02-3.5 1.02-2.7 0-5-1.82-5.81-4.28L1.69 18.43C3.69 22.42 7.8 24 12 24z" />
+                    <path fill="#FBBC05" d="M6.19 15.17A7.17 7.17 0 0 1 5.75 12c0-1.1.2-2.17.58-3.17L2.1 5.7A11.95 11.95 0 0 0 0 12c0 2.29.66 4.43 1.81 6.25l4.38-3.08z" />
+                    <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.94 1.19 15.22 0 12 0 7.8 0 3.69 2.58 1.69 6.57l4.5 3.5c.81-2.46 3.11-4.28 5.81-4.28z" />
+                  </svg>
+                  <span>Continue with Google</span>
+                </>
               )}
-            </div>
-
-            {authTab === 'register' && (
-              <div className="flex flex-col gap-1.5">
-                <label className="text-[10px] font-bold uppercase text-typography-primary">Confirm Password *</label>
-                <input type="password" value={authConfirmPassword} onChange={e => setAuthConfirmPassword(e.target.value)} required placeholder="••••••••" className="w-full bg-white border border-surface-light rounded-xl px-4 py-2.5 text-sm text-typography-primary outline-none focus:border-brand-pink" />
-              </div>
-            )}
-
-            {siteKey && (
-              <Turnstile 
-                onVerify={setCaptchaToken} 
-                resetTrigger={turnstileResetCount}
-              />
-            )}
- 
-            <button 
-              type="submit" 
-              disabled={authLoading || (!!siteKey && !captchaToken)}
-              className="w-full bg-brand-navy hover:bg-brand-pink text-white rounded-xl py-3 text-xs font-bold uppercase tracking-widest transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {authLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
-              {authTab === 'login' ? 'Sign In' : 'Register'}
             </button>
+          </div>
 
-            <div className="relative my-6 text-center">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-surface-light"></div>
-              </div>
-              <span className="relative bg-surface-offWhite px-3 text-[10px] uppercase text-typography-muted font-bold tracking-widest">Or</span>
-            </div>
-
-            <button 
-              type="button" 
-              onClick={() => showInfo("Google Login is coming soon! Please sign in or register using your Email Address and Password.")}
-              className="w-full flex items-center justify-center gap-2 bg-white hover:bg-surface-offWhite border border-surface-light text-typography-primary py-3 text-xs font-bold rounded-xl transition-all"
+          <div className="mt-8 text-center">
+            <button
+              onClick={() => setCheckoutMode('guest')}
+              className="text-xs text-typography-muted hover:text-brand-pink font-semibold underline underline-offset-4 transition-colors"
             >
-              Google Login (Coming Soon)
-            </button>
-          </form>
-
-          <div className="mt-8 flex justify-between items-center text-xs">
-            <button onClick={() => setCheckoutMode('guest')} className="text-typography-muted hover:text-brand-pink font-semibold">Continue as Guest instead</button>
-            <button 
-              onClick={() => setAuthTab(authTab === 'login' ? 'register' : 'login')} 
-              className="text-brand-pink hover:text-brand-navy font-bold border-b border-brand-pink pb-0.5"
-            >
-              {authTab === 'login' ? 'Register Account' : 'Back to Login'}
+              ← Or Continue as Guest
             </button>
           </div>
         </div>
@@ -1177,12 +1085,12 @@ export function CheckoutPage() {
   return (
     <div className="pt-32 pb-36 lg:pb-24 min-h-screen bg-surface-white">
       <div className="max-w-5xl mx-auto px-4 md:px-8">
-        
+
         {/* Wizard Progress Stepper */}
         {step < 4 && (
           <div className="flex items-center justify-center gap-2 md:gap-4 mb-8 border-b border-surface-light pb-6 overflow-x-auto no-scrollbar">
             <button onClick={() => setStep(1)} className={`flex items-center gap-1.5 text-[10px] uppercase font-bold tracking-wider whitespace-nowrap ${step >= 1 ? 'text-brand-pink' : 'text-typography-muted'}`}>
-              <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center text-[10px]">1</span> 
+              <span className="w-5 h-5 rounded-full border border-current flex items-center justify-center text-[10px]">1</span>
               <span>
                 <span className="hidden sm:inline">Contact & Address</span>
                 <span className="sm:hidden">Details</span>
@@ -1213,7 +1121,7 @@ export function CheckoutPage() {
               </span>
               <span>{currencySymbol}{checkoutTotal.toLocaleString()}</span>
             </button>
-            
+
             {showMobileSummary && (
               <div className="px-6 pb-6 border-t border-surface-light divide-y divide-surface-light animate-fadeIn">
                 {items.map(item => (
@@ -1250,10 +1158,10 @@ export function CheckoutPage() {
         )}
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
-          
+
           {/* LEFT: Stepped Inputs */}
           <div className="lg:col-span-2 space-y-8">
-            
+
             {/* STEP 1: CONTACT DETAILS & SHIPPING */}
             {step === 1 && (
               <div className="space-y-6">
@@ -1287,24 +1195,23 @@ export function CheckoutPage() {
                       <label className="text-[10px] font-bold uppercase text-typography-primary">Contact Number *</label>
                       <span className="text-[9px] text-typography-muted">09XXXXXXXXX</span>
                     </div>
-                    <input 
-                      type="tel" 
+                    <input
+                      type="tel"
                       inputMode="numeric"
-                      required 
+                      required
                       maxLength={11}
                       pattern="09[0-9]{9}"
-                      value={phone} 
-                      onChange={e => setPhone(sanitizePhPhone(e.target.value))} 
+                      value={phone}
+                      onChange={e => setPhone(sanitizePhPhone(e.target.value))}
                       onKeyDown={handlePhoneKeyDown}
-                      placeholder="09171234567" 
+                      placeholder="09171234567"
                       title="Contact number must be an 11-digit Philippine mobile number starting with 09"
-                      className={`bg-surface-offWhite border ${
-                        phone && !isValidPhPhone(phone)
-                          ? 'border-amber-400 focus:border-amber-500'
-                          : phone && isValidPhPhone(phone)
+                      className={`bg-surface-offWhite border ${phone && !isValidPhPhone(phone)
+                        ? 'border-amber-400 focus:border-amber-500'
+                        : phone && isValidPhPhone(phone)
                           ? 'border-emerald-500/50 focus:border-emerald-600'
                           : 'border-surface-light focus:border-brand-pink'
-                      } rounded-xl px-4 py-3 text-sm text-typography-primary placeholder:text-typography-muted/40 outline-none transition-colors`} 
+                        } rounded-xl px-4 py-3 text-sm text-typography-primary placeholder:text-typography-muted/40 outline-none transition-colors`}
                     />
                     {phone && (
                       <div className="text-[11px] mt-0.5">
@@ -1329,9 +1236,9 @@ export function CheckoutPage() {
                 {deliveryMethod !== 'pickup' && (
                   <div className="pt-4 border-t border-surface-light space-y-4">
                     <h3 className="text-xs uppercase tracking-widest font-bold text-typography-primary">Shipping Address</h3>
-                    
+
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                      
+
                       {/* Province Selector */}
                       <div className="flex flex-col gap-1.5">
                         <label className="text-[10px] font-bold uppercase text-typography-primary">
@@ -1404,11 +1311,10 @@ export function CheckoutPage() {
 
                 {/* Reservation Timer Banner */}
                 {reservationExpiresAt && (
-                  <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 border transition-colors ${
-                    reservationSecsLeft <= 60
-                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
-                      : 'bg-brand-navy/10 border-brand-navy/20 text-brand-navy'
-                  }`}>
+                  <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 border transition-colors ${reservationSecsLeft <= 60
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
+                    : 'bg-brand-navy/10 border-brand-navy/20 text-brand-navy'
+                    }`}>
                     <Clock className="w-4 h-4 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold">
@@ -1474,16 +1380,16 @@ export function CheckoutPage() {
                 {selectedMethodId === 'leeway' && (
                   <div className="border border-surface-light bg-surface-offWhite p-6 rounded-2xl space-y-6">
                     <h3 className="text-xs uppercase tracking-widest font-bold text-typography-primary border-b border-surface-light pb-2">Installment Pre-Approval Check</h3>
-                    
+
                     {!user ? (
                       <div className="space-y-4">
                         <p className="text-xs text-amber-500 font-bold">You are currently checking out as a Guest. Installments are only available to logged-in users so they can track outstanding balances and submit payments in their profile dashboards.</p>
                         <button
                           type="button"
-                          onClick={() => { setCheckoutMode('auth'); setAuthTab('login'); }}
+                          onClick={() => setCheckoutMode('auth')}
                           className="bg-brand-navy hover:bg-brand-pink text-white rounded-xl px-6 py-2.5 text-xs font-bold uppercase tracking-wider transition-all"
                         >
-                          Sign In / Register
+                          Sign In with Google
                         </button>
                       </div>
                     ) : (() => {
@@ -1541,7 +1447,7 @@ export function CheckoutPage() {
                             {leewayDownPayment > 0 && (
                               <div className="space-y-4 pt-3 border-t border-surface-light animate-fadeIn">
                                 <label className="text-[10px] font-bold uppercase text-typography-primary block">Select Down Payment Route</label>
-                                
+
                                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                   {deliveryMethod === 'pickup' && (
                                     <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer text-xs ${leewayPaymentMethodId === 'walk_in' ? 'border-brand-pink bg-brand-pink/5' : 'border-surface-light'}`}>
@@ -1631,8 +1537,8 @@ export function CheckoutPage() {
                           {(hasUnrequested || hasRejected) && (
                             <div className="space-y-3">
                               <p className="text-xs text-typography-muted">
-                                {hasRejected 
-                                  ? 'Some items in your cart have been declined for installment. You can request installment for any new/unrequested items, but declined items cannot be checked out via installment.' 
+                                {hasRejected
+                                  ? 'Some items in your cart have been declined for installment. You can request installment for any new/unrequested items, but declined items cannot be checked out via installment.'
                                   : 'Submit a request to authorize installment pre-approval for the items in your cart.'}
                               </p>
                               <button
@@ -1665,17 +1571,17 @@ export function CheckoutPage() {
                 {selectedMethodId !== 'walk_in' && selectedMethodId !== 'leeway' && selectedPaymentMethod && (selectedPaymentMethod.type === 'qr' || selectedPaymentMethod.type === 'bank_transfer') && (
                   <div className="border border-surface-light bg-surface-offWhite p-6 rounded-2xl space-y-6">
                     <h3 className="text-xs uppercase tracking-widest font-bold text-typography-primary border-b border-surface-light pb-2">Digital Transfer Details</h3>
-                    
+
                     {selectedPaymentMethod.qr_code_url && (
                       <div className="flex flex-col items-center gap-4">
                         <div className="w-48 h-48 bg-white border border-surface-light p-2 rounded-xl">
                           <img src={selectedPaymentMethod.qr_code_url} alt="QR Code" className="w-full h-full object-contain" />
                         </div>
-                        <a 
-                          href={selectedPaymentMethod.qr_code_url} 
-                          target="_blank" 
-                          rel="noreferrer" 
-                          download="payment-qr.jpg" 
+                        <a
+                          href={selectedPaymentMethod.qr_code_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          download="payment-qr.jpg"
                           className="flex items-center gap-2 text-xs text-brand-pink hover:text-brand-navy transition-all font-semibold"
                         >
                           <Download className="w-4 h-4" /> Download QR Code Image
@@ -1704,11 +1610,10 @@ export function CheckoutPage() {
 
                 {/* Reservation Timer Banner */}
                 {reservationExpiresAt && (
-                  <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 border transition-colors ${
-                    reservationSecsLeft <= 60
-                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
-                      : 'bg-brand-navy/10 border-brand-navy/20 text-brand-navy'
-                  }`}>
+                  <div className={`flex items-center gap-3 rounded-2xl px-4 py-3 border transition-colors ${reservationSecsLeft <= 60
+                    ? 'bg-amber-500/10 border-amber-500/30 text-amber-400 animate-pulse'
+                    : 'bg-brand-navy/10 border-brand-navy/20 text-brand-navy'
+                    }`}>
                     <Clock className="w-4 h-4 flex-shrink-0" />
                     <div className="flex-1 min-w-0">
                       <p className="text-xs font-bold">
@@ -1780,7 +1685,7 @@ export function CheckoutPage() {
           {step < 5 && (
             <div className="bg-surface-offWhite border border-surface-light rounded-2xl p-6 h-max space-y-6">
               <h3 className="text-xs uppercase tracking-widest font-bold text-typography-primary border-b border-surface-light pb-2">Order Summary</h3>
-              
+
               <div className="divide-y divide-surface-light max-h-80 overflow-y-auto pr-1">
                 {items.map(item => (
                   <div key={`${item.id}-${item.selectedSize || ''}`} className="flex gap-3 py-3 items-center">
@@ -1813,9 +1718,9 @@ export function CheckoutPage() {
                     <span className="font-semibold uppercase tracking-wider text-[10px]">Promo ({appliedPromo.code})</span>
                     <div className="flex items-center gap-2">
                       <span className="font-bold">-{currencySymbol}{discountAmt.toLocaleString()}</span>
-                      <button 
-                        onClick={handleRemovePromo} 
-                        className="text-emerald-600 hover:text-red-500 font-bold text-xs bg-white/20 w-4 h-4 rounded-full flex items-center justify-center transition-colors" 
+                      <button
+                        onClick={handleRemovePromo}
+                        className="text-emerald-600 hover:text-red-500 font-bold text-xs bg-white/20 w-4 h-4 rounded-full flex items-center justify-center transition-colors"
                         title="Remove promo"
                       >
                         ✕
@@ -1845,17 +1750,17 @@ export function CheckoutPage() {
                 <div className="space-y-2 pt-2 border-t border-surface-light">
                   <span className="text-[10px] uppercase font-bold text-typography-muted tracking-wider block">Delivery Option</span>
                   <div className="grid grid-cols-2 gap-2">
-                    <button 
-                      type="button" 
-                      onClick={() => handleDeliveryMethodChange('standard')} 
+                    <button
+                      type="button"
+                      onClick={() => handleDeliveryMethodChange('standard')}
                       className={`flex flex-col items-center justify-center py-2 px-3 rounded-xl border text-center transition-all ${deliveryMethod === 'standard' ? 'border-brand-pink bg-brand-pink/5 text-brand-pink font-semibold shadow-sm' : 'border-surface-light text-typography-muted hover:border-brand-navy'}`}
                     >
                       <Truck className="w-4 h-4 mb-1" />
                       <span className="text-[9px] uppercase tracking-wider">Standard</span>
                     </button>
-                    <button 
-                      type="button" 
-                      onClick={() => handleDeliveryMethodChange('pickup')} 
+                    <button
+                      type="button"
+                      onClick={() => handleDeliveryMethodChange('pickup')}
                       className={`flex flex-col items-center justify-center py-2 px-3 rounded-xl border text-center transition-all ${deliveryMethod === 'pickup' ? 'border-[#fb7a90] bg-[#fb7a90]/5 text-[#fb7a90] font-semibold shadow-sm' : 'border-surface-light text-typography-muted hover:border-brand-navy'}`}
                     >
                       <Store className="w-4 h-4 mb-1" />
@@ -1886,10 +1791,10 @@ export function CheckoutPage() {
                 {/* Steps Action Buttons (placed below item summary) */}
                 <div className="hidden lg:block pt-4 border-t border-surface-light mt-4">
                   {step === 1 && (
-                    <button 
-                      type="button" 
-                      onClick={handleAdvanceFromStep1} 
-                      disabled={!isStep1Valid() || isReserving} 
+                    <button
+                      type="button"
+                      onClick={handleAdvanceFromStep1}
+                      disabled={!isStep1Valid() || isReserving}
                       className="w-full flex items-center justify-center gap-2 bg-brand-navy hover:bg-brand-pink text-white rounded-xl py-3.5 font-bold text-xs uppercase tracking-widest transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
                     >
                       {isReserving ? (
@@ -1906,17 +1811,17 @@ export function CheckoutPage() {
 
                   {step === 2 && (
                     <div className="flex flex-col gap-3">
-                      <button 
-                        type="button" 
-                        onClick={() => isStep3Valid() && setStep(3)} 
-                        disabled={!isStep3Valid()} 
+                      <button
+                        type="button"
+                        onClick={() => isStep3Valid() && setStep(3)}
+                        disabled={!isStep3Valid()}
                         className="w-full flex items-center justify-center gap-2 bg-brand-navy hover:bg-brand-pink text-white rounded-xl py-3.5 font-bold text-xs uppercase tracking-widest transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
                       >
                         Next Step <ChevronRight className="w-4 h-4" />
                       </button>
-                      <button 
-                        type="button" 
-                        onClick={() => setStep(1)} 
+                      <button
+                        type="button"
+                        onClick={() => setStep(1)}
                         className="w-full text-center text-xs font-semibold uppercase tracking-wider text-typography-muted hover:text-brand-navy py-1.5 transition-colors"
                       >
                         Back
@@ -1926,10 +1831,10 @@ export function CheckoutPage() {
 
                   {step === 3 && (
                     <div className="flex flex-col gap-3">
-                      <button 
-                        type="button" 
+                      <button
+                        type="button"
                         onClick={() => setShowConfirmModal(true)}
-                        disabled={isPlacing} 
+                        disabled={isPlacing}
                         className="w-full flex items-center justify-center gap-2 bg-brand-navy hover:bg-brand-navy/90 text-white rounded-xl py-3.5 font-bold text-xs uppercase tracking-widest active:scale-[0.98] transition-all disabled:opacity-50 shadow-sm"
                       >
                         {isPlacing ? (
@@ -1940,9 +1845,9 @@ export function CheckoutPage() {
                           'Confirm & Place Order'
                         )}
                       </button>
-                      <button 
-                        type="button" 
-                        onClick={() => setStep(2)} 
+                      <button
+                        type="button"
+                        onClick={() => setStep(2)}
                         className="w-full text-center text-xs font-semibold uppercase tracking-wider text-typography-muted hover:text-brand-navy py-1.5 transition-colors"
                       >
                         Back
@@ -2025,8 +1930,8 @@ export function CheckoutPage() {
 
                 {siteKey && (
                   <div className="mb-6 w-full">
-                    <Turnstile 
-                      onVerify={setOrderCaptchaToken} 
+                    <Turnstile
+                      onVerify={setOrderCaptchaToken}
                       resetTrigger={orderTurnstileResetCount}
                     />
                   </div>
