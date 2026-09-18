@@ -134,6 +134,10 @@ export function CustomerOrdersPage() {
     } else if (tab === 'profile') {
       setActiveTab('profile');
     }
+
+    if (searchParams.get('welcome') === 'google') {
+      showSuccess("Welcome to KBDF Luxury! Please complete your contact number and delivery address below.");
+    }
   }, [searchParams]);
 
   useEffect(() => {
@@ -160,6 +164,18 @@ export function CustomerOrdersPage() {
             if (data.custom_province) setProfileCustomProvince(data.custom_province);
             if (data.custom_city) setProfileCustomCity(data.custom_city);
             if (data.custom_barangay) setProfileCustomBarangay(data.custom_barangay);
+          }
+
+          // If first name or last name is not yet set in database, pre-fill from Google / auth metadata
+          if (!data?.first_name && !data?.last_name) {
+            const metaName = user.user_metadata?.full_name || user.user_metadata?.name || '';
+            if (metaName) {
+              const parts = metaName.trim().split(' ');
+              const first = parts.slice(0, -1).join(' ') || parts[0];
+              const last = parts.length > 1 ? parts[parts.length - 1] : '';
+              if (first) setProfileFirstName(first);
+              if (last) setProfileLastName(last);
+            }
           }
           setLoadingProfile(false);
         });
@@ -781,13 +797,46 @@ export function CustomerOrdersPage() {
               setActiveTab('profile');
               setSearchParams({ tab: 'profile' });
             }}
-            className={`pb-4 text-[10px] uppercase tracking-[0.15em] font-bold transition-all flex items-center gap-2 border-b-2 ${
+            className={`pb-4 text-[10px] uppercase tracking-[0.15em] font-bold transition-all flex items-center gap-2 border-b-2 relative ${
               activeTab === 'profile' ? 'border-brand-navy text-brand-navy' : 'border-transparent text-typography-muted hover:text-typography-primary hover:border-typography-primary/30'
             }`}
           >
             <User className="w-4 h-4" /> Profile Details
+            {!loadingProfile && (!profilePhone || !profileProvince || !profileStreetAddress) && (
+              <span className="w-2 h-2 rounded-full bg-brand-pink animate-pulse" title="Profile incomplete" />
+            )}
           </button>
         </div>
+
+        {/* Incomplete Profile Prompt Banner */}
+        {!loadingProfile && (!profilePhone || !profileProvince || !profileStreetAddress) && (
+          <div className="mb-8 p-4 md:p-5 bg-gradient-to-r from-brand-peach/20 via-brand-pink/15 to-brand-coral/20 border border-brand-pink/30 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-in fade-in duration-200">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-brand-pink/20 text-brand-pink flex items-center justify-center flex-shrink-0">
+                <Info className="w-4 h-4" />
+              </div>
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-brand-navy">
+                  Please Complete Your Profile Details
+                </h4>
+                <p className="text-xs text-typography-muted mt-0.5">
+                  Add your contact mobile number and default delivery address for faster one-click checkout and seamless order delivery.
+                </p>
+              </div>
+            </div>
+            {activeTab !== 'profile' && (
+              <button
+                onClick={() => {
+                  setActiveTab('profile');
+                  setSearchParams({ tab: 'profile' });
+                }}
+                className="px-4 py-2.5 bg-brand-navy hover:bg-brand-pink text-white text-[10px] uppercase font-bold tracking-widest rounded-xl transition-colors whitespace-nowrap self-start sm:self-auto shadow-sm"
+              >
+                Complete Profile →
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Tab 1: Order History */}
         {activeTab === 'orders' && (

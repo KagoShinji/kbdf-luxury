@@ -1,17 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { FadeUp } from "../../ui/Motion/FadeUp";
 import { useUserAuth } from "../../core/context/UserAuthContext";
 import { useNavigate } from "react-router-dom";
 import { Loader2, AlertCircle, CheckCircle, Check, X, Eye, EyeOff } from "lucide-react";
-import { useNotification } from "../../core/context/NotificationContext";
 import { useTenant } from "../../core/context/TenantContext";
 import { Turnstile } from "../../ui/Turnstile";
+import { supabase } from "../../lib/supabase/supabaseClient";
 
 export function AuthPage() {
   const [isLogin, setIsLogin] = useState(true);
-  const { signIn, signUp } = useUserAuth();
+  const { user, signIn, signUp, signInWithGoogle } = useUserAuth();
   const navigate = useNavigate();
-  const { showInfo } = useNotification();
   const { tenant } = useTenant();
 
   const settings = (tenant?.store_settings as any) || {};
@@ -25,12 +24,33 @@ export function AuthPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
   const [successMsg, setSuccessMsg] = useState("");
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   const [turnstileResetCount, setTurnstileResetCount] = useState(0);
   const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
   const siteKey = isLocalhost ? "1x00000000000000000000AA" : (import.meta.env.VITE_TURNSTILE_SITE_KEY || "");
+
+  useEffect(() => {
+    if (user?.id) {
+      supabase
+        .from('customer_profiles')
+        .select('phone, province, street_address')
+        .eq('id', user.id)
+        .maybeSingle()
+        .then(({ data }: any) => {
+          if (!data || !data.phone || !data.province || !data.street_address) {
+            navigate("/orders?tab=profile&welcome=google");
+          } else {
+            navigate("/shop");
+          }
+        })
+        .catch(() => {
+          navigate("/orders?tab=profile");
+        });
+    }
+  }, [user, navigate]);
 
   const passwordCriteria = [
     { label: "At least 6 characters", met: password.length >= 6 },
@@ -91,8 +111,16 @@ export function AuthPage() {
     }
   };
 
-  const handleGoogleSignIn = () => {
-    showInfo("Google Login is coming soon! Please sign in or register using your Email Address and Password.");
+  const handleGoogleSignIn = async () => {
+    setIsGoogleLoading(true);
+    setErrorMsg("");
+    try {
+      await signInWithGoogle();
+    } catch (err: any) {
+      console.error('Google sign-in error:', err);
+      setErrorMsg(err.message || 'Failed to sign in with Google. Please try again.');
+      setIsGoogleLoading(false);
+    }
   };
 
   return (
@@ -254,15 +282,20 @@ export function AuthPage() {
             <button
               type="button"
               onClick={handleGoogleSignIn}
-              className="flex items-center justify-center gap-3 bg-surface-offWhite hover:bg-surface-light text-typography-primary w-full py-4 text-xs uppercase tracking-widest font-bold rounded-xl border border-surface-light transition-colors"
+              disabled={isSubmitting || isGoogleLoading}
+              className="flex items-center justify-center gap-3 bg-surface-offWhite hover:bg-surface-light text-typography-primary w-full py-4 text-xs uppercase tracking-widest font-bold rounded-xl border border-surface-light transition-all active:scale-[0.99] disabled:opacity-50"
             >
-              <svg className="w-4 h-4" viewBox="0 0 24 24">
-                <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.69c-.29 1.5-.1.88-1.5 2.2l3.43 2.66c2-1.84 3.12-4.56 3.12-7.69z" />
-                <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.43-2.66c-.95.64-2.17 1.02-3.5 1.02-2.7 0-5-1.82-5.81-4.28L1.69 18.43C3.69 22.42 7.8 24 12 24z" />
-                <path fill="#FBBC05" d="M6.19 15.17A7.17 7.17 0 0 1 5.75 12c0-1.1.2-2.17.58-3.17L2.1 5.7A11.95 11.95 0 0 0 0 12c0 2.29.66 4.43 1.81 6.25l4.38-3.08z" />
-                <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.94 1.19 15.22 0 12 0 7.8 0 3.69 2.58 1.69 6.57l4.5 3.5c.81-2.46 3.11-4.28 5.81-4.28z" />
-              </svg>
-              Google (Coming Soon)
+              {isGoogleLoading ? (
+                <Loader2 className="w-4 h-4 animate-spin text-brand-navy" />
+              ) : (
+                <svg className="w-4 h-4" viewBox="0 0 24 24">
+                  <path fill="#4285F4" d="M23.745 12.27c0-.7-.06-1.4-.19-2.07H12v3.9h6.69c-.29 1.5-.1.88-1.5 2.2l3.43 2.66c2-1.84 3.12-4.56 3.12-7.69z" />
+                  <path fill="#34A853" d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.43-2.66c-.95.64-2.17 1.02-3.5 1.02-2.7 0-5-1.82-5.81-4.28L1.69 18.43C3.69 22.42 7.8 24 12 24z" />
+                  <path fill="#FBBC05" d="M6.19 15.17A7.17 7.17 0 0 1 5.75 12c0-1.1.2-2.17.58-3.17L2.1 5.7A11.95 11.95 0 0 0 0 12c0 2.29.66 4.43 1.81 6.25l4.38-3.08z" />
+                  <path fill="#EA4335" d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.43-3.43C17.94 1.19 15.22 0 12 0 7.8 0 3.69 2.58 1.69 6.57l4.5 3.5c.81-2.46 3.11-4.28 5.81-4.28z" />
+                </svg>
+              )}
+              {isGoogleLoading ? "Connecting to Google..." : "Continue with Google"}
             </button>
 
             <div className="mt-8 text-center">
