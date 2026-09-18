@@ -485,10 +485,46 @@ export function CheckoutPage() {
   }, [user, tenantId]);
 
   const handleRequestLeeway = async () => {
-    if (!user || !tenantId) return;
+    if (!user) {
+      showError('Please sign in with your account to submit an installment request.');
+      return;
+    }
+    if (!tenantId) {
+      showError('Store configuration is initializing. Please try again in a moment.');
+      return;
+    }
+
     setIsRequestingLeeway(true);
     try {
-      const newRequestedItems = items.map(item => ({
+      // 1. Verify item leeway eligibility in real-time against database
+      const itemIds = items.map(i => i.id);
+      const { data: dbItems, error: itemsError } = await supabase
+        .from('items')
+        .select('id, title, leeway_enabled')
+        .in('id', itemIds);
+
+      if (itemsError) throw itemsError;
+
+      const ineligibleDbItems = (dbItems || []).filter((dbItem: any) => !dbItem.leeway_enabled);
+      if (ineligibleDbItems.length > 0) {
+        const ineligibleTitles = ineligibleDbItems.map((i: any) => i.title).join(', ');
+        showError(`The following item(s) are not available for installment plans: ${ineligibleTitles}`);
+        setIsRequestingLeeway(false);
+        return;
+      }
+
+      const eligibleItems = items.filter(item => {
+        const matched = dbItems?.find((d: any) => d.id === item.id);
+        return matched ? matched.leeway_enabled : (item as any).leeway_enabled;
+      });
+
+      if (eligibleItems.length === 0) {
+        showError('None of the items in your cart are currently eligible for installment plans.');
+        setIsRequestingLeeway(false);
+        return;
+      }
+
+      const newRequestedItems = eligibleItems.map(item => ({
         id: item.id,
         title: item.title,
         price: item.price,
@@ -498,7 +534,7 @@ export function CheckoutPage() {
         status: 'pending'
       }));
 
-      // Fetch existing leeway request for customer to merge items
+      // 2. Fetch existing leeway request for customer to merge items
       const { data: existingRequest } = await supabase
         .from('leeway_requests')
         .select('*')
@@ -507,7 +543,7 @@ export function CheckoutPage() {
         .maybeSingle();
 
       let mergedItems = [...newRequestedItems];
-      const customerName = user.user_metadata?.full_name || `${firstName} ${lastName}`.trim() || email || 'Unknown';
+      const customerName = user.user_metadata?.full_name || `${firstName} ${lastName}`.trim() || email || user.email || 'Customer';
       const customerEmail = user.email || email;
 
       if (existingRequest) {
@@ -517,8 +553,8 @@ export function CheckoutPage() {
         for (const newItem of newRequestedItems) {
           const index = mergedItems.findIndex(item => item.id === newItem.id && item.size === newItem.size);
           if (index > -1) {
-            // Re-request if rejected. Keep if already approved or pending.
-            if (mergedItems[index].status === 'rejected') {
+            // If rejected or previously pending, re-request as pending
+            if (mergedItems[index].status === 'rejected' || mergedItems[index].status === 'pending') {
               mergedItems[index].status = 'pending';
               mergedItems[index].quantity = newItem.quantity;
             }
@@ -539,7 +575,8 @@ export function CheckoutPage() {
             requested_items: mergedItems,
             status: overallStatus,
             customer_name: customerName,
-            customer_email: customerEmail
+            customer_email: customerEmail,
+            updated_at: new Date().toISOString()
           })
           .eq('id', existingRequest.id);
 
@@ -553,7 +590,8 @@ export function CheckoutPage() {
             status: 'pending',
             requested_items: mergedItems,
             customer_name: customerName,
-            customer_email: customerEmail
+            customer_email: customerEmail,
+            updated_at: new Date().toISOString()
           });
 
         if (error) throw error;
@@ -562,8 +600,9 @@ export function CheckoutPage() {
       setLeewayRequestedItems(mergedItems);
       showSuccess('Installment pre-approval request submitted successfully for your items!');
     } catch (err: any) {
-      console.error(err);
+      console.error('Failed to submit installment request:', err);
       showError('Failed to submit installment request: ' + (err.message || err));
+    } finally {
       setIsRequestingLeeway(false);
     }
   };

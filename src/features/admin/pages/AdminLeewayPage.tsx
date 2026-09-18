@@ -256,7 +256,7 @@ export function AdminLeewayPage() {
           .from('leeway_requests')
           .select('*')
           .eq('tenant_id', tenantId)
-          .order('created_at', { ascending: false });
+          .order('updated_at', { ascending: false });
 
         if (error) throw error;
 
@@ -944,7 +944,7 @@ export function AdminLeewayPage() {
   }, [paymentLogs, dateRange]);
 
   const filteredRequests = useMemo(() => {
-    return leewayRequests.filter(r => isDateInRange(r.created_at, dateRange));
+    return leewayRequests.filter(r => isDateInRange(r.updated_at || r.created_at, dateRange));
   }, [leewayRequests, dateRange]);
 
   const currentVisibleData = useMemo(() => {
